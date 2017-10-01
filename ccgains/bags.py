@@ -69,8 +69,17 @@ class Bag(object):
 
 
 class BagFIFO(object):
-    def __init__(self, base_currency):
-        self.currency = base_currency
+    def __init__(self, relation):
+        """Create a BagFIFO object.
+
+        :param relation:
+            A CurrencyRelation object which serves exchange rates
+            between all currencies involved in trades which will later
+            be added to this BagFIFO. The CurrencyRelation's base
+            currency is also the base currency for this BagFIFO.
+
+        """
+        self.currency = relation.currency
         self.bags = []
         self.pdbags = pd.DataFrame()
         self.first_filled_bag = 0
@@ -101,25 +110,139 @@ class BagFIFO(object):
     def __repr__(self):
         return str(self.to_data_frame())
 
+    def buy_with_base_currency(self, time, amount, currency, cost):
+        """Create a new bag with *amount* *currency*. The *cost* is
+        paid in base currency, so no other bag is emptied. Both
+        *amount* and *cost* should be without any fees.
+
+        """
+        if amount <= 0:
+            return
+        self.bags.append(Bag(
+                time=time,
+                currency=currency,
+                amount=amount,
+                cost_currency=self.currency,
+                cost=cost))
+        self.totals[currency] = (
+                self.totals.get(currency, Decimal()) + amount)
+
+    def withdraw(self, amount, currency):
+        """Withdraw *amount* *currency* from an exchange.
+
+        The pair `withdraw` and `deposit` is used for transfers of the
+        same currency from one exhange to another.
+
+        Withdrawal fees must be paid separately with `pay_fees`.
+
+        If the amount is more than the total available, a ValueError
+        will be raised.
+
+        The amount will not be taken out of bags, but marked as
+        'on-hold', which decreases the total amount of currency
+        available for trades. Call `deposit` to decrease the amount
+        'on hold'. A trade done while some money is still in transit
+        (i.e. withdrawn, but not deposited yet), will still be paid for
+        with money from the first bag (FIFO).
+
+        Note: This is done this way because I am not sure if the tax
+        agency would allow to park money by sending some to a wallet.
+
+        """
+        total = self.totals.get(currency, 0)
+        on_hold = self.on_hold.get(currency, 0)
+        if amount > total - on_hold:
+            raise ValueError(
+                "Withdrawn amount ({1} {0}) higher than total available "
+                "({2} {0}). ({3} {0} is on hold already)".format(
+                        currency, amount, total, on_hold))
+        self.on_hold[currency] = on_hold + amount
+
+    def deposit(self, amount, currency):
+        """Deposit *amount* *currency* into an exchange, making it available
+        for trading.
+
+        The pair `withdraw` and `deposit` is used for transfers of the
+        same currency from one exhange to another.
+
+        Fees must be paid separately with `pay_fees`.
+
+        If the amount is more than the amount withdrawn before, a ValueError
+        will be raised.
+
+        See also `withdraw`.
+
+        """
+        on_hold = self.on_hold.get(currency, 0)
+        if amount > on_hold:
+            raise ValueError(
+                "Trying to deposit more money ({1} {0}) than was "
+                "withdrawn before ({2}, {0}).".format(
+                        currency, amount, on_hold))
+        self.on_hold[currency] = on_hold - amount
+
+    def pay_fees(self, amount, currency):
+        """Pay *amount* fees with *currency*. The fees are taken out of
+        the first bag with the proper currency. The bag's price is not
+        changed, but it's current amount and value are decreased.
+
+        If the fees are higher than available total amount, ValueError
+        is raised.
+
+        """
+        total = self.totals.get(currency, 0)
+        on_hold = self.on_hold.get(currency, 0)
+        if amount > total - on_hold:
+            raise ValueError(
+                "Fees ({1} {0}) higher than total available "
+                "({2} {0}). ({3} {0} is on hold)".format(
+                        currency, amount, total, on_hold))
+        # remove from first bag(s):
+        to_pay = amount
+        while to_pay > 0:
+            # Find bags with this currency and empty them to pay for
+            # this, starting from first non-empty bag (FIFO):
+            i = self.first_filled_bag
+            while self.bags[i].currency != currency:
+                i += 1
+            # spend returns remaining amount that still needs to be paid:
+            to_pay = self.bags[i].spend(to_pay)
+
+            # update self.first_filled_bag in case a bag was emptied:
+            while self.bags[self.first_filled_bag].is_empty():
+                self.first_filled_bag += 1
+        self.totals[currency] = total - amount
+
+    def trade(self, time):
+        pass
+
     def process_trade(self, trade):
         print 'processing trade:\n' + trade.to_csv_line()
-        if trade.sellcur in ['', self.currency]:
-            # Either we paid nothing, which means it must be a deposit,
-            # or it is paid for with our base currency:
-            # simply add new bag:
-            self.bags.append(Bag(
+        if trade.sellcur == self.currency:
+            # Paid for with our base currency, simply add new bag:
+            self.buy_with_base_currency(
                     time=trade.time,
-                    currency=trade.buycur,
                     amount=trade.buyval,
-                    cost_currency=trade.sellcur,
-                    cost=trade.sellval))
-            self.totals[trade.buycur] = (
-                    self.totals.get(trade.buycur, Decimal()) + trade.buyval)
-       # elif:
+                    currency=trade.buycur,
+                    cost=trade.sellval)
 
+        elif not trade.sellcur or trade.sellval == 0:
+            # Paid nothing, so it must be a deposit:
+            self.deposit(trade.buyval, trade.buycur)
+            # any fees?
+            if trade.feeval > 0:
+                self.pay_fees(trade.feeval, trade.feecur)
 
-        else:
-            # We paid with a currency which must be in some bag.
+        elif not trade.buycur or trade.buyval == 0:
+            # Got nothing, so it must be a withdrawal:
+            self.withdraw(trade.sellval, trade.sellcur)
+            # any fees?
+            if trade.feeval > 0:
+                self.pay_fees(trade.feeval, trade.feecur)
+
+        else: #TODO: check & use relation to create new bag with `buy_with_base_currency`
+            # We paid with a currency which must be in some bag and
+            # bought another currency.
             to_pay = trade.sellval
             while to_pay > 0:
                 # Find bags with this currency and empty them to pay for
@@ -133,7 +256,7 @@ class BagFIFO(object):
                 if self.bags[i].is_empty():
                     print 'bag was emptied'
 
-                # update self.first_filled_bag if a bag got emptied:
+                # update self.first_filled_bag in case a bag was emptied:
                 while self.bags[self.first_filled_bag].is_empty():
                     self.first_filled_bag += 1
             self.totals[trade.sellcur] -= trade.sellval
