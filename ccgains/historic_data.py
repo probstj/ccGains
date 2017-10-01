@@ -76,12 +76,12 @@ class HistoricData(object):
 
         """
         try:
-            self.cfrom, self.cto = unit.upper().split('/')
+            self.cto, self.cfrom = unit.upper().split('/')
         except:
             raise ValueError(
                     'Please supply the currency exchange rate unit '
                     'in the correct form, e.g. "EUR/USD"')
-        self.unit = self.cfrom + '/' + self.cto
+        self.unit = self.cto + '/' + self.cfrom
         self.interval = interval
         self.data = None
 
