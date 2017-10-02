@@ -181,7 +181,15 @@ class CurrencyRelation(object):
         If data for the direct relation of the currency pair has not
         been added with `add_historic_data` before, an indirect route
         using multiple added pairs is tried. If this also fails, a
-        ValueError is raised.
+        KeyError is raised.
 
         """
-        pass
+        recipe = self.pairs[
+                (from_currency.upper(), to_currency.upper())][1]
+        result = 1.0
+        for fc, tc, rev in recipe:
+            if not rev:
+                result *= self.hdict[(fc, tc)].get_price(time)
+            else:
+                result /= self.hdict[(fc, tc)].get_price(time)
+        return result
