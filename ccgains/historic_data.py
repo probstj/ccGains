@@ -26,6 +26,7 @@
 
 from os import path
 import pandas as pd
+import requests
 
 def resample_weighted_average(df, freq, data_col, weight_col):
     """Resample a DataFrame with a DatetimeIndex. Return weighted
@@ -55,10 +56,48 @@ def resample_weighted_average(df, freq, data_col, weight_col):
     return result
 
 class HistoricData(object):
+    def __init__(self, unit):
+        """Create a HistoricData object with no data.
+        The unit must be a string given in the form
+        'currency_one/currency_two', e.g. 'EUR/BTC'.
+
+        Only use this constructor if you want to manually set
+        the data, otherwise use one of the subclasses
+        `HistoricDataCSV` or `HistoricDataAPI`.
+
+        To manually set data, self.data must be a pandas time series
+        with a fixed frequency.
+
+        """
+        try:
+            self.cto, self.cfrom = unit.upper().split('/')
+        except:
+            raise ValueError(
+                    'Please supply the currency exchange rate unit '
+                    'in the correct form, e.g. "EUR/USD"')
+        self.unit = self.cto + '/' + self.cfrom
+        self.interval = None
+        self.data = None
+
+    def prepare_request(self, time):
+        """Return a Pandas DataFrame which contains the data for the
+        requested *time*.
+
+        """
+        return self.data
+
+    def get_price(self, time):
+        """Return the price at *time*"""
+        df = self.prepare_request(time)
+        return df.loc[pd.Timestamp(time).floor(self.data.index.freq)]
+
+
+class HistoricDataCSV(HistoricData):
+
     def __init__(self, file_name, unit, interval='H'):
         """Initialize a HistoricData object with data loaded from a csv
         file. The unit must be a string given in the form
-        'currency_one/currency2', e.g. 'EUR/BTC'.
+        'currency_one/currency_two', e.g. 'EUR/BTC'.
         The csv must consist of three columns: first a unix timestamp,
         second the rate given in *unit*, third the amount traded.
         (Such a csv can be downloaded from bitcoincharts.com)
@@ -75,15 +114,8 @@ class HistoricData(object):
         updated.
 
         """
-        try:
-            self.cto, self.cfrom = unit.upper().split('/')
-        except:
-            raise ValueError(
-                    'Please supply the currency exchange rate unit '
-                    'in the correct form, e.g. "EUR/USD"')
-        self.unit = self.cto + '/' + self.cfrom
+        super(HistoricDataCSV, self).__init__(unit)
         self.interval = interval
-        self.data = None
 
         fbase, fext = path.splitext(file_name)
         if fext != '.h5':
@@ -138,8 +170,86 @@ class HistoricData(object):
         # (https://github.com/pandas-dev/pandas/issues/2106)
 
 
-    def get_price(self, time):
-        """Return the price at *time*"""
-        return self.data.loc[pd.Timestamp(time).floor(self.data.index.freq)]
+class HistoricDataAPI(HistoricData):
+    def __init__(self, cache_folder, unit, interval='H'):
+        """Initialize a HistoricData object which tranparently fetch data
+        on request (`get_price`) from the public Poloniex API:
+        https://poloniex.com/public?command=returnTradeHistory
 
+        For faster loading times on future calls, a HDF5 file is created
+        from the requested data and used transparently the next time a
+        request for the same day and pair is made. These HDF5 files are
+        saved in *cache_folder*.
+
+        The *unit* must be a string given in the form
+        'currency_one/currency_two', e.g. 'EUR/BTC'.
+
+        The data will be resampled by calculating the weighted price
+        for interval steps specified by *interval*. See:
+        http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+        for possible values.
+
+
+
+        """
+        super(HistoricDataAPI, self).__init__(unit)
+        self.interval = interval
+        self.url = 'https://poloniex.com/public'
+
+        # see if the currency pair exists and the api is reachable:
+        req = requests.get(
+                'https://poloniex.com/public',
+                params={'command' : 'returnTicker'})
+        self.currency_pair = '{0:s}_{1:s}'.format(self.cto, self.cfrom)
+        if not self.currency_pair in req.json():
+            currency_pair2 = '{0:s}_{1:s}'.format(self.cfrom, self.cto)
+            if not currency_pair2 in req.json():
+                raise ValueError(
+                    'Neither currency pair "{0:s}" nor pair "{1:s}" is '
+                    'available on "{2:s}".'.format(
+                            self.currency_pair, currency_pair2, self.url))
+            # flip currency pair:
+            self.cfrom, self.cto = self.cto, self.cfrom
+            self.unit = self.cto + '/' + self.cfrom
+            self.currency_pair = currency_pair2
+        self.params = {'command': 'returnTradeHistory',
+                       'currencyPair': self.currency_pair}
+
+        ######## errors: ##############
+        # more than 1 month:
+        #r = requests.get('https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_XMR&start=0&end=1483142400')
+
+        # wrong cur.pair:
+        #https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_PMR&start=1410158341&end=1410499372
+
+
+        # tiny data year 2016 end:
+        #r = requests.get('https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_XMR&start=1483228700&end=1483228800')
+
+
+        #df = pd.read_json(req.text)
+        #print df
+
+        self.urlfmt = (
+                'https://poloniex.com/public?command=returnTradeHistory&'
+                'currencyPair={0:s}_{1:s}&start={2:d}&end={3:d}')
+
+        #url = self.urlfmt.format(
+        #        self.cto, self.cfrom,
+        #        self.start.value // 10 ** 9, self.end.value // 10 ** 9)
+        #print url
+        #r = urllib2.urlopen(url)
+        #print r.read()[:100]
+        #with open('/home/juergen/Coding/projects/ccGains/data/polotest.json') as f:
+        #    pd.read_json(f)
+        #    print pd
+
+    def prepare_request(self, time):
+        """Return a Pandas DataFrame which contains the data for the
+        requested *time*.
+
+        """
+        # request data for the same day:
+        params
+        return self.data
 
