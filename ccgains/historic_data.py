@@ -27,8 +27,10 @@
 from os import path
 import pandas as pd
 import requests
+from time import sleep
 
-def resample_weighted_average(df, freq, data_col, weight_col):
+def resample_weighted_average(
+        df, freq, data_col, weight_col, include_weights=False):
     """Resample a DataFrame with a DatetimeIndex. Return weighted
     averages of groups.
 
@@ -40,8 +42,15 @@ def resample_weighted_average(df, freq, data_col, weight_col):
         Column to take the average of
     :param weight_col:
         Column with the weights
+    :param include_weights: (default False)
+        If True, include the summed weights in result
     :return:
-        pandas.Series with weighted averages
+        if include_weights:
+            pandas.Series with weighted averages
+        else:
+            pands.DataFrame with two columns:
+                data_col: the weighted averages,
+                weight_col: the summed weights
 
     Source: ErnestScribbler, https://stackoverflow.com/a/44683506
 
@@ -51,9 +60,13 @@ def resample_weighted_average(df, freq, data_col, weight_col):
     # can thus be used in aggregation:
     df['data_times_weight'] = df[data_col] * df[weight_col]
     g = df.resample(freq)
-    result = g['data_times_weight'].sum() / g[weight_col].sum()
+    avgs = g['data_times_weight'].sum() / g[weight_col].sum()
     del df['data_times_weight']
-    return result
+    if include_weights:
+        return pd.DataFrame(
+                {data_col: avgs, weight_col: g[weight_col].sum()})
+    else:
+        return avgs
 
 class HistoricData(object):
     def __init__(self, unit):
@@ -79,17 +92,17 @@ class HistoricData(object):
         self.interval = None
         self.data = None
 
-    def prepare_request(self, time):
-        """Return a Pandas DataFrame which contains the data for the
-        requested *time*.
+    def prepare_request(self, dtime):
+        """Return a Pandas DataFrame which contains the data at the
+        requested datetime *dtime*.
 
         """
         return self.data
 
-    def get_price(self, time):
-        """Return the price at *time*"""
-        df = self.prepare_request(time)
-        return df.loc[pd.Timestamp(time).floor(self.data.index.freq)]
+    def get_price(self, dtime):
+        """Return the price at datetime *dtime*"""
+        df = self.prepare_request(dtime)
+        return df.loc[pd.Timestamp(dtime).floor(df.index.freq)]
 
 
 class HistoricDataCSV(HistoricData):
@@ -198,7 +211,7 @@ class HistoricDataAPI(HistoricData):
 
         # see if the currency pair exists and the api is reachable:
         req = requests.get(
-                'https://poloniex.com/public',
+                self.url,
                 params={'command' : 'returnTicker'})
         self.currency_pair = '{0:s}_{1:s}'.format(self.cto, self.cfrom)
         if not self.currency_pair in req.json():
@@ -212,44 +225,62 @@ class HistoricDataAPI(HistoricData):
             self.cfrom, self.cto = self.cto, self.cfrom
             self.unit = self.cto + '/' + self.cfrom
             self.currency_pair = currency_pair2
-        self.params = {'command': 'returnTradeHistory',
-                       'currencyPair': self.currency_pair}
+        self.command = 'returnTradeHistory'
+        # Poloniex does not allow more than 6 queries per second;
+        # Wait at least this number of seconds between queries:
+        self.query_wait_time = 0.17
+        self.last_query_time = pd.Timestamp.now()
+        self.file_name = path.join(
+                cache_folder,
+                'Poloniex_{0:s}_{1:s}.h5'.format(
+                        self.currency_pair, self.interval))
 
-        ######## errors: ##############
-        # more than 1 month:
-        #r = requests.get('https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_XMR&start=0&end=1483142400')
-
-        # wrong cur.pair:
-        #https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_PMR&start=1410158341&end=1410499372
-
-
-        # tiny data year 2016 end:
-        #r = requests.get('https://poloniex.com/public?command=returnTradeHistory&currencyPair=BTC_XMR&start=1483228700&end=1483228800')
-
-
-        #df = pd.read_json(req.text)
-        #print df
-
-        self.urlfmt = (
-                'https://poloniex.com/public?command=returnTradeHistory&'
-                'currencyPair={0:s}_{1:s}&start={2:d}&end={3:d}')
-
-        #url = self.urlfmt.format(
-        #        self.cto, self.cfrom,
-        #        self.start.value // 10 ** 9, self.end.value // 10 ** 9)
-        #print url
-        #r = urllib2.urlopen(url)
-        #print r.read()[:100]
-        #with open('/home/juergen/Coding/projects/ccGains/data/polotest.json') as f:
-        #    pd.read_json(f)
-        #    print pd
-
-    def prepare_request(self, time):
+    def prepare_request(self, dtime):
         """Return a Pandas DataFrame which contains the data for the
-        requested *time*.
+        requested datetime *dtime*.
 
         """
-        # request data for the same day:
-        params
-        return self.data
+        dtime = pd.Timestamp(dtime)
+        key = "d{a:04d}{m:02d}{d:02d}".format(
+                a=dtime.year, m=dtime.month, d=dtime.day)
+        with pd.HDFStore(self.file_name, mode='a') as store:
+            if key in store:
+                return store.get(key)
+            else:
+                # We need to fetch the data from the poloniex api
+                start = dtime.floor('D').value // 10 ** 9
+                end = dtime.ceil('D').value // 10 ** 9
+                # Wait for the min call time to pass:
+                now = pd.Timestamp.now()
+                delta = (now - self.last_query_time).total_seconds()
+                self.last_query_time = now
+                if delta <= self.query_wait_time:
+                    sleep(self.query_wait_time - delta)
+                # Make request:
+                req = requests.get(
+                        self.url,
+                        params={'command': self.command,
+                                'currencyPair': self.currency_pair,
+                                'start': start,
+                                'end': end})
+                try:
+                    df = pd.read_json(
+                        req.text, orient='records', precise_float=True)
+                except ValueError:
+                    # There might have been an error returned from Poloniex,
+                    # which cannot be parsed the same way than regular data.
+                    j = pd.json.loads(req.text)
+                    if 'error' in j:
+                        raise ValueError(
+                            "Poloniex API returned error: {0:s}\n"
+                            "Requested URL was: {1:s}".format(
+                                    j['error'],
+                                    req.url))
+                    else:
+                        raise
+                df.set_index('date', inplace=True)
+                self.data = resample_weighted_average(
+                        df, self.interval, 'rate', 'amount')
+                store.put(key, self.data, format="fixed")
+                return self.data
 
