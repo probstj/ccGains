@@ -208,32 +208,39 @@ class HistoricDataAPI(HistoricData):
         super(HistoricDataAPI, self).__init__(unit)
         self.interval = interval
         self.url = 'https://poloniex.com/public'
-
-        # see if the currency pair exists and the api is reachable:
-        req = requests.get(
-                self.url,
-                params={'command' : 'returnTicker'})
-        self.currency_pair = '{0:s}_{1:s}'.format(self.cto, self.cfrom)
-        if not self.currency_pair in req.json():
-            currency_pair2 = '{0:s}_{1:s}'.format(self.cfrom, self.cto)
-            if not currency_pair2 in req.json():
-                raise ValueError(
-                    'Neither currency pair "{0:s}" nor pair "{1:s}" is '
-                    'available on "{2:s}".'.format(
-                            self.currency_pair, currency_pair2, self.url))
-            # flip currency pair:
-            self.cfrom, self.cto = self.cto, self.cfrom
-            self.unit = self.cto + '/' + self.cfrom
-            self.currency_pair = currency_pair2
-        self.command = 'returnTradeHistory'
         # Poloniex does not allow more than 6 queries per second;
         # Wait at least this number of seconds between queries:
         self.query_wait_time = 0.17
-        self.last_query_time = pd.Timestamp.now()
+        self.command = 'returnTradeHistory'
+        self.currency_pair = '{0:s}_{1:s}'.format(self.cto, self.cfrom)
         self.file_name = path.join(
                 cache_folder,
                 'Poloniex_{0:s}_{1:s}.h5'.format(
                         self.currency_pair, self.interval))
+        # See if the currency pair exists:
+        self.last_query_time = pd.Timestamp.now()
+        if not path.exists(self.file_name):
+            # If a cache with the correct file name already exists,
+            # there's no need to query the api again
+            req = requests.get(
+                self.url,
+                params={'command' : 'returnTicker'})
+            if not self.currency_pair in req.json():
+                # try if flipped currency pair is available:
+                currency_pair2 = '{0:s}_{1:s}'.format(self.cfrom, self.cto)
+                if not currency_pair2 in req.json():
+                    raise ValueError(
+                        'Neither currency pair "{0:s}" nor pair "{1:s}" is '
+                        'available on "{2:s}".'.format(
+                                self.currency_pair, currency_pair2, self.url))
+                # flip currency pair:
+                self.cfrom, self.cto = self.cto, self.cfrom
+                self.unit = self.cto + '/' + self.cfrom
+                self.currency_pair = currency_pair2
+                self.file_name = path.join(
+                        cache_folder,
+                        'Poloniex_{0:s}_{1:s}.h5'.format(
+                                self.currency_pair, self.interval))
 
     def prepare_request(self, dtime):
         """Return a Pandas DataFrame which contains the data for the
@@ -249,7 +256,8 @@ class HistoricDataAPI(HistoricData):
             else:
                 # We need to fetch the data from the poloniex api
                 start = dtime.floor('D').value // 10 ** 9
-                end = dtime.ceil('D').value // 10 ** 9
+                # fetch a time span of one day:
+                end = start + 86400
                 # Wait for the min call time to pass:
                 now = pd.Timestamp.now()
                 delta = (now - self.last_query_time).total_seconds()
@@ -265,7 +273,12 @@ class HistoricDataAPI(HistoricData):
                                 'end': end})
                 try:
                     df = pd.read_json(
-                        req.text, orient='records', precise_float=True)
+                        req.text, orient='records', precise_float=True,
+                        convert_axes=False, convert_dates=['date'],
+                        keep_default_dates=False, dtype={
+                                'tradeID': False, 'globalTradeID': False,
+                                'total': False, 'type': False, 'date': False,
+                                'rate': float, 'amount': float})
                 except ValueError:
                     # There might have been an error returned from Poloniex,
                     # which cannot be parsed the same way than regular data.
@@ -283,4 +296,3 @@ class HistoricDataAPI(HistoricData):
                         df, self.interval, 'rate', 'amount')
                 store.put(key, self.data, format="fixed")
                 return self.data
-
