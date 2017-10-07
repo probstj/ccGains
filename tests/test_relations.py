@@ -33,7 +33,7 @@ from ccgains import relations
 class TestCurrencyRelation(unittest.TestCase):
 
     def setUp(self):
-        self.rel = relations.CurrencyRelation('foo')
+        self.rel = relations.CurrencyRelation()
 
     def test_update_pairs_one(self):
         # Create dummy pairs:

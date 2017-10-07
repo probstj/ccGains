@@ -24,28 +24,22 @@
 # Get the latest version at: https://github.com/probstj/ccGains
 #
 
-from historic_data import HistoricData
-
 class CurrencyRelation(object):
-    def __init__(self, base_currency, hist_data_list=[]):
+    def __init__(self, *args):
         """Create a CurrencyRelation object. This object contains
         methods to exchange values between currencies, using
         historical exchange rates at specific times.
 
-        params: base_currency:
-            A default currency (string, e.g. "EUR"), the so called
-            'base currency' used as default in many methods.
-        params: hist_data_list:
-            A list with HistoricData objects. If multiple HistoricData
+        params: *args:
+            Any number of HistoricData objects. If multiple HistoricData
             objects are given with the same unit, only the last one
             in the list will be used. More/updated HistoricData
             objects can be supplied later with `add_historic_data`
             method.
 
         """
-        self.currency = str(base_currency).upper()
         self.hdict = {}
-        for hist_data in hist_data_list:
+        for hist_data in args:
             self.hdict[(hist_data.cfrom, hist_data.cto)] = hist_data
 
         # self.pairs is a dictionary with keys
@@ -85,8 +79,8 @@ class CurrencyRelation(object):
         else:
             fcur, tcur = (c.upper() for c in newtuple)
             # check if newtuple provided is really available:
-            if not (fcur, tcur) in self.hdict:
-                if not (tcur, fcur) in self.hdict:
+            if (fcur, tcur) not in self.hdict:
+                if (tcur, fcur) not in self.hdict:
                     raise ValueError(
                         "Supplied new pair {} has no historical data. "
                         "Please provide it with `add_historic_data` first."
@@ -171,8 +165,6 @@ class CurrencyRelation(object):
                     self.pairs[newr[0]] = newr[1]
 
         return self.pairs
-
-
 
     def get_rate(self, time, from_currency, to_currency):
         """Return the rate for conversion of *from_currency* to

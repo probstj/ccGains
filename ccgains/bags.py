@@ -69,17 +69,22 @@ class Bag(object):
 
 
 class BagFIFO(object):
-    def __init__(self, relation):
+    def __init__(self, base_currency, relation):
         """Create a BagFIFO object.
+
+        params: base_currency:
+            The base currency (string, e.g. "EUR"). All bag's values
+            (the money spent for them at buying time) will be recorded
+            in this currency and finally the gain will be calculated
+            for this currency.
 
         :param relation:
             A CurrencyRelation object which serves exchange rates
             between all currencies involved in trades which will later
-            be added to this BagFIFO. The CurrencyRelation's base
-            currency is also the base currency for this BagFIFO.
+            be added to this BagFIFO.
 
         """
-        self.currency = relation.currency
+        self.currency = str(base_currency).upper()
         self.bags = []
         self.pdbags = pd.DataFrame()
         self.first_filled_bag = 0
