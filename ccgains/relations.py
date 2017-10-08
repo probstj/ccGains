@@ -30,7 +30,7 @@ class CurrencyRelation(object):
         methods to exchange values between currencies, using
         historical exchange rates at specific times.
 
-        params: *args:
+        :param *args:
             Any number of HistoricData objects. If multiple HistoricData
             objects are given with the same unit, only the last one
             in the list will be used. More/updated HistoricData
@@ -166,9 +166,9 @@ class CurrencyRelation(object):
 
         return self.pairs
 
-    def get_rate(self, time, from_currency, to_currency):
+    def get_rate(self, dtime, from_currency, to_currency):
         """Return the rate for conversion of *from_currency* to
-        *to_currency* at the datetime *time*.
+        *to_currency* at the datetime *dtime*.
 
         If data for the direct relation of the currency pair has not
         been added with `add_historic_data` before, an indirect route
@@ -179,9 +179,9 @@ class CurrencyRelation(object):
         recipe = self.pairs[
                 (from_currency.upper(), to_currency.upper())][1]
         result = 1.0
-        for fc, tc, rev in recipe:
-            if not rev:
-                result *= self.hdict[(fc, tc)].get_price(time)
+        for fcur, tcur, inverse in recipe:
+            if not inverse:
+                result *= self.hdict[(fcur, tcur)].get_price(dtime)
             else:
-                result /= self.hdict[(fc, tc)].get_price(time)
+                result /= self.hdict[(fcur, tcur)].get_price(dtime)
         return result

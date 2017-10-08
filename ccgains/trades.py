@@ -39,7 +39,7 @@ class Trade(object):
             "Börse", "Merkmal", "Kommentar"]
 
     def __init__(
-            self, ttype, time, buy_currency, buy_amount,
+            self, ttype, dtime, buy_currency, buy_amount,
             sell_currency, sell_amount, fee_currency='', fee_amount=0,
             exchange='', mark='', comment=''):
         self.type = ttype
@@ -66,13 +66,13 @@ class Trade(object):
         self.mark = mark
         self.comment = comment
         # save the time as datetime object:
-        if isinstance(time, datetime):
-            self.time = time
-        elif isinstance(time, (float, int)):
-            self.time = datetime.utcfromtimestamp(time).replace(
+        if isinstance(dtime, datetime):
+            self.dtime = dtime
+        elif isinstance(dtime, (float, int)):
+            self.dtime = datetime.utcfromtimestamp(dtime).replace(
                     tzinfo=tz.tzutc())
         else:
-            self.time = dateparse(time)
+            self.dtime = dateparse(dtime)
 
         if self.feecur != buy_currency and self.feecur != sell_currency:
             raise ValueError(
@@ -82,7 +82,7 @@ class Trade(object):
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
         for i, val in enumerate([
-                self.type, self.time,
+                self.type, self.dtime,
                 self.buycur, self.buyval,
                 self.sellcur, self.sellval,
                 self.feecur, self.feeval,
@@ -147,6 +147,6 @@ class TradeHistory(object):
             th.tlist.append(Trade(*vals))
         print 'input:', len(th.tlist), 'trades'
         # trades must be sorted:
-        th.tlist.sort(key=attrgetter('time'), reverse=False)
+        th.tlist.sort(key=attrgetter('dtime'), reverse=False)
 
         return th
