@@ -3,7 +3,7 @@
 # nothing in examples folder:
 examples/*
 # except the actual examples:
-#!examples/*.py
+!examples/*.py
 
 # nothing in data folder
 # (so far. need to check copyright issues if I may add data from bitcoincharts.com)
