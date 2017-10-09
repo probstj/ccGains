@@ -27,6 +27,7 @@
 from decimal import Decimal
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+import logging
 
 
 class Bag(object):
@@ -200,17 +201,17 @@ class BagFIFO(object):
                         currency, amount, total, on_hold))
         self.on_hold[currency] = on_hold + amount
 
-    def deposit(self, amount, currency):
-        """Deposit *amount* *currency* into an exchange, making it available
-        for trading.
+    def deposit(self, dtime, amount, currency):
+        """Deposit *amount* *currency* into an exchange, making it
+        available for trading.
 
         The pair `withdraw` and `deposit` is used for transfers of the
         same currency from one exhange to another.
 
         Fees must be paid separately with `pay`.
 
-        If the amount is more than the amount withdrawn before, a ValueError
-        will be raised.
+        If the amount is more than the amount withdrawn before, a
+        warning will be printed and a bag created with a base cost of 0.
 
         See also `withdraw`.
 
@@ -221,11 +222,18 @@ class BagFIFO(object):
         amount = Decimal(amount)
         on_hold = self.on_hold.get(currency, 0)
         if amount > on_hold:
-            raise ValueError(
-                "Trying to deposit more money ({1} {0}) than was "
-                "withdrawn before ({2}, {0}).".format(
+            diff = amount - on_hold
+            print(
+                "WARNING: Depositing more money ({1} {0}) than "
+                "was withdrawn before ({2} {0}).".format(
                         currency, amount, on_hold))
-        self.on_hold[currency] = on_hold - amount
+            print(
+                "Assuming the additional amount ({1} {0}) was bought "
+                "with 0 {2}.".format(currency, diff, self.currency))
+            self.on_hold[currency] = Decimal()
+            self.buy_with_base_currency(dtime, diff, currency, 0)
+        else:
+            self.on_hold[currency] = on_hold - amount
 
     def pay(self, dtime, amount, currency):
         """Pay *amount* with *currency*. The money is taken out of
@@ -296,7 +304,7 @@ class BagFIFO(object):
         return tprofit, cost, rev
 
     def process_trade(self, trade):
-        print 'processing trade:\n' + trade.to_csv_line()
+        print '\n===== processing trade: =====\n' + trade.to_csv_line()
         if trade.sellcur == self.currency and trade.sellval != 0:
             # Paid for with our base currency, simply add new bag:
             # (The cost is directly translated to the base value
@@ -309,7 +317,7 @@ class BagFIFO(object):
 
         elif not trade.sellcur or trade.sellval == 0:
             # Paid nothing, so it must be a deposit:
-            self.deposit(trade.buyval, trade.buycur)
+            self.deposit(trade.dtime, trade.buyval, trade.buycur)
             # any fees?
             if trade.feeval > 0:
                 _, cost, _ = self.pay(
@@ -368,3 +376,4 @@ class BagFIFO(object):
                 # to buy the new currency:
                 self.buy_with_base_currency(
                     trade.dtime, trade.buyval, trade.buycur, revenue)
+            print "Sold %f %s for %f %s\n" % (trade.sellval, trade.sellcur, trade.buyval, trade.buycur)
