@@ -27,7 +27,9 @@
 from decimal import Decimal
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+
 import logging
+log = logging.getLogger(__name__)
 
 
 class Bag(object):
@@ -139,8 +141,10 @@ class BagFIFO(object):
             ]
         return pd.DataFrame.from_items(d)
 
-    def __repr__(self):
-        return str(self.to_data_frame())
+    def __str__(self):
+        return self.to_data_frame().to_string(
+                formatters={'amount': '{0:.8f}'.format,
+                            'cost': '{0:.8f}'.format})
 
     def buy_with_base_currency(self, dtime, amount, currency, cost):
         """Create a new bag with *amount* money in *currency*.
@@ -197,7 +201,7 @@ class BagFIFO(object):
         if amount > total - on_hold:
             raise ValueError(
                 "Withdrawn amount ({1} {0}) higher than total available "
-                "({2} {0}). ({3} {0} is on hold already)".format(
+                "({2} {0}, of which {3} {0} are on hold already).".format(
                         currency, amount, total, on_hold))
         self.on_hold[currency] = on_hold + amount
 
@@ -223,12 +227,11 @@ class BagFIFO(object):
         on_hold = self.on_hold.get(currency, 0)
         if amount > on_hold:
             diff = amount - on_hold
-            print(
-                "WARNING: Depositing more money ({1} {0}) than "
+            log.warning(
+                "Depositing more money ({1} {0}) than "
                 "was withdrawn before ({2} {0}).".format(
-                        currency, amount, on_hold))
-            print(
-                "Assuming the additional amount ({1} {0}) was bought "
+                        currency, amount, on_hold)
+                + " Assuming the additional amount ({1} {0}) was bought "
                 "with 0 {2}.".format(currency, diff, self.currency))
             self.on_hold[currency] = Decimal()
             self.buy_with_base_currency(dtime, diff, currency, 0)
@@ -274,6 +277,7 @@ class BagFIFO(object):
         tprofit = Decimal()
         # due payment:
         to_pay = amount
+        log.info("Paying %.8f %s", to_pay, currency)
         # Find bags with this currency and use them to pay for
         # this, starting from first non-empty bag (FIFO):
         i = self.first_filled_bag
@@ -281,18 +285,41 @@ class BagFIFO(object):
             while (self.bags[i].currency != currency
                    or self.bags[i].is_empty()):
                 i += 1
+            bag = self.bags[i]
 
             # Spend as much as possible from this bag:
-            spent, bvalue, remainder = self.bags[i].spend(to_pay)
+            log.info("Paying with bag from %s, containing %.8f %s",
+                 bag.dtime, bag.current_amount, bag.currency)
+            spent, bvalue, remainder = bag.spend(to_pay)
+            log.info("Contents of bag after payment: %.8f %s (spent %.8f %s)",
+                 bag.current_amount, bag.currency, spent, currency)
+
 
             # The revenue is the value of spent amount at dtime:
-            thisrev = spent * Decimal(
+            rate = Decimal(
                     self.relation.get_rate(dtime, currency, self.currency))
+            thisrev = spent * rate
             rev += thisrev
             cost += bvalue
-            if relativedelta(dtime, self.bags[i].dtime).year < 1:
+            short_term = relativedelta(dtime, bag.dtime).years < 1
+            if short_term:
                 tprofit += (thisrev - bvalue)
+
+            log.info("Profits in this transaction:\n"
+                 "    Original bag cost: %.2f %s (Price %.8f %s/%s)\n"
+                 "    Proceeds         : %.2f %s (Price %.8f %s/%s)\n"
+                 "    Profit/loss      : %.2f %s\n"
+                 "    Taxable?         : %s (held for %s than a year)",
+                 bvalue, self.currency, bag.price, bag.cost_currency, currency,
+                 thisrev, self.currency, rate, self.currency, currency,
+                 (thisrev - bvalue), self.currency,
+                 'yes' if short_term else 'no',
+                 'less' if short_term else 'more')
+
             to_pay = remainder
+            if to_pay > 0:
+                log.info("Still to be paid with another bag: %.8f %s",
+                     to_pay, currency)
             i += 1
 
         # update self.first_filled_bag:
@@ -304,7 +331,8 @@ class BagFIFO(object):
         return tprofit, cost, rev
 
     def process_trade(self, trade):
-        print '\n===== processing trade: =====\n' + trade.to_csv_line()
+        log.info(
+            'Processing trade: %s', trade.to_csv_line().strip('\n'))
         if trade.sellcur == self.currency and trade.sellval != 0:
             # Paid for with our base currency, simply add new bag:
             # (The cost is directly translated to the base value
@@ -366,6 +394,9 @@ class BagFIFO(object):
             # a profit or a loss, which is the difference between the
             # revenue we get for selling our held currency minus the
             # expenses we had to initially buy it:
+            log.info("Selling %.8f %s for %.8f %s at %s (%s)",
+                 trade.sellval, trade.sellcur, trade.buyval, trade.buycur,
+                 trade.exchange, trade.dtime)
             tprofit, _, revenue = self.pay(
                     trade.dtime, trade.sellval, trade.sellcur)
             self.profit += tprofit
@@ -376,4 +407,3 @@ class BagFIFO(object):
                 # to buy the new currency:
                 self.buy_with_base_currency(
                     trade.dtime, trade.buyval, trade.buycur, revenue)
-            print "Sold %f %s for %f %s\n" % (trade.sellval, trade.sellcur, trade.buyval, trade.buycur)

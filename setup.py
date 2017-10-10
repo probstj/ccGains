@@ -39,6 +39,7 @@ setup(name='ccGains',
           'tables',
           'numpy',
           'pandas',
+          'requests'
       ],
       zip_safe=False)
 

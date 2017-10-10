@@ -95,7 +95,7 @@ class CurrencyRelation(object):
             foundB = []
             # first compare new pair with available pairs and try to add
             # new combined relations:
-            for (cfrom, cto), (count, recipe) in self.pairs.items():
+            for (cfrom, cto), (count, recipe) in tuple(self.pairs.items()):
                 if new2 == cfrom and new1 != cto:
                     # new pair can be added before other recipe
                     newp = [(new1, cto),

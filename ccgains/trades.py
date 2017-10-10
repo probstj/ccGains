@@ -30,13 +30,16 @@ from dateutil import tz
 from dateutil.parser import parse as dateparse
 from operator import attrgetter
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class Trade(object):
     params_names_list = [
-            "Typ", "Datum", "Kaufwährung", "Kauf",
-            "Verkaufswährung", "Verkauf",
-            "Gebührenwährung", "Gebühr",
-            "Börse", "Merkmal", "Kommentar"]
+            "type", "date_time", "buy_currency", "buy_amount",
+            "sell_currency", "sell_amount",
+            "fee_currency", "fee_amount",
+            "exchange", "mark", "comment"]
 
     def __init__(
             self, ttype, dtime, buy_currency, buy_amount,
@@ -125,11 +128,12 @@ class TradeHistory(object):
             if p != -1:
                 expectedheader[p] = Trade.params_names_list[i]
         expectedheader = ', '.join(expectedheader)
-        print(
-            'Please check whether the supplied `param_loc_in_csv` is '
-            'correct:\n'
-            'The csv file''s header: "%s"\n'
-            'should match: "%s"' %(header, expectedheader))
+        log.info("Loading trade history from file: %s", file_name)
+        log.info(
+            'Is the supplied `param_loc_in_csv` correct? '
+            'The csv file\'s header: %s'
+            ' should match: %s',
+            header.strip('\n'), expectedheader.strip('\n'))
 
         # convert input lines to Trades:
         for csvline in csvlines[1:]:
@@ -145,7 +149,7 @@ class TradeHistory(object):
                         default_timezone = tz.tzlocal()
                     vals[1] = vals[1].replace(tzinfo=default_timezone)
             th.tlist.append(Trade(*vals))
-        print 'input:', len(th.tlist), 'trades'
+        log.info("Loaded %i trades", len(th.tlist))
         # trades must be sorted:
         th.tlist.sort(key=attrgetter('dtime'), reverse=False)
 
