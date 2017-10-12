@@ -77,7 +77,9 @@ class Trade(object):
         else:
             self.dtime = dateparse(dtime)
 
-        if self.feecur != buy_currency and self.feecur != sell_currency:
+        if (self.feeval > 0
+                and self.feecur != buy_currency
+                and self.feecur != sell_currency):
             raise ValueError(
                     'fee_currency must match either buy_currency or '
                     'sell_currency')

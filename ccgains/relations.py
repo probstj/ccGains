@@ -24,6 +24,8 @@
 # Get the latest version at: https://github.com/probstj/ccGains
 #
 
+from __future__ import division
+
 class CurrencyRelation(object):
     def __init__(self, *args):
         """Create a CurrencyRelation object. This object contains
@@ -178,7 +180,7 @@ class CurrencyRelation(object):
         """
         recipe = self.pairs[
                 (from_currency.upper(), to_currency.upper())][1]
-        result = 1.0
+        result = 1
         for fcur, tcur, inverse in recipe:
             if not inverse:
                 result *= self.hdict[(fcur, tcur)].get_price(dtime)

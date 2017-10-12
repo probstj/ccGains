@@ -129,6 +129,7 @@ class HistoricDataCSV(HistoricData):
         """
         super(HistoricDataCSV, self).__init__(unit)
         self.interval = interval
+        self.dataset = '{0:s}_{1:s}'.format(self.cto, self.cfrom)
 
         fbase, fext = path.splitext(file_name)
         if fext != '.h5':
@@ -145,6 +146,16 @@ class HistoricDataCSV(HistoricData):
             if csvtime == 0 and h5time == 0:
                 raise IOError('File does not exist: %s' % file_name)
 
+            if csvtime <= h5time:
+                # Quick load from h5 file, but only if data matches:
+                self.file_name = fbase + '.h5'
+                with pd.HDFStore(self.file_name, mode='r') as store:
+                    if self.dataset in store:
+                        self.data = store[self.dataset]
+                    else:
+                        # Will force csv to be reloaded:
+                        h5time = 0
+
             if csvtime > h5time:
                 self.data = pd.read_csv(
                         file_name,
@@ -157,15 +168,9 @@ class HistoricDataCSV(HistoricData):
                 # sort the data by time:
                 self.data.sort_index(inplace=True)
                 # create new HDF5 file:
-                store = pd.HDFStore(fbase + '.h5', mode='w')
-                store['data'] = self.data
-                store.close()
-
-        self.file_name = fbase + '.h5'
-        self.store = pd.HDFStore(self.file_name, mode='r')
-        # load it into memory:
-        self.data = self.store['data']
-        self.store.close()
+                self.file_name = fbase + '.h5'
+                with pd.HDFStore(self.file_name) as store:
+                    store[self.dataset] = self.data
 
         # Get weighted prices, resampled with interval:
         # (this will only return one column, the weighted prices; the

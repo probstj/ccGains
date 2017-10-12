@@ -169,19 +169,21 @@ class BagFIFO(object):
         self.totals[currency] = (
                 self.totals.get(currency, Decimal()) + amount)
 
-    def withdraw(self, amount, currency):
-        """Withdraw *amount* *currency* from an exchange.
+    def withdraw(self, dtime, currency, amount, fee):
+        """Withdraw *amount* monetary units of *currency* from an
+        exchange for a *fee* (also given in *currency*). The fee is
+        included in amount. The withdrawal happened at datetime *dtime*.
 
-        The pair `withdraw` and `deposit` is used for transfers of the
-        same currency from one exhange to another.
-
-        Withdrawal fees must be paid separately with `pay`.
+        The pair of methods `withdraw` and `deposit` is used for
+        transfers of the same currency from one exhange to another.
 
         If the amount is more than the total available, a ValueError
         will be raised.
 
-        The amount will not be taken out of bags, but marked as
-        'on-hold', which decreases the total amount of currency
+        ---
+
+        The amount (minus fee) will not be taken out of bags, but marked
+        as 'on-hold', which decreases the total amount of currency
         available for trades. Call `deposit` to decrease the amount
         'on hold'. A trade done while some money is still in transit
         (i.e. withdrawn, but not deposited yet), will still be paid for
@@ -189,13 +191,53 @@ class BagFIFO(object):
 
         Note: This is done this way because I am not sure if the tax
         agency would allow to park money by sending some to a wallet.
-        This should be made user-selectable in future.
+        This should be made user-configurable in future.
+
+        ---
+
+        Losses made by fees (which must be directly resulting from and
+        connected to trading activity!) are substracted from the total
+        taxable profit (recorded in base currency).
+
+        This approach can be logically justified by looking at what
+        happens to the amount of fiat money that leaves a bank account
+        solely for trading with cryptocurrencies, which in turn are sold
+        entirely for fiat money before the end of the year. If nothing
+        else was bought with the cryptocurrencies in between, the
+        difference between the amount of fiat before and after trading
+        is exactly the taxable profit. For simplicity, say we buy some
+        Bitcoin at one exchange for X fiat money (i.e. X fiat money is
+        leaving the bank account), then transfer it to another exchange
+        (paying withdrawal and/or deposit fees) where we sell it again
+        for fiat, e.g.:
+            - buy 1 BTC @ 1000 EUR at exchangeA;
+              now we own 1 BTC with base value 1000 EUR
+            - transfer 1 BTC to exchangeB for 0.1 BTC fees;
+              now we own 0.9 BTC with base value 900 EUR,
+              100 EUR for the fees are counted as loss
+            - Example 1: We sell 0.9 BTC at a better price than before:
+              we get exactly 1000 EUR. The immediate profit is 100 EUR
+              (1000 EUR proceeds minus 900 EUR base value), but minus
+              the 100 EUR fee loss from earlier we have exactly a
+              taxable profit of 0 EUR, which makes sense considering
+              we started with 1000 EUR and now still have only 1000 EUR.
+            - Example 2: We sell 0.9 BTC at a much better price:
+              we get exactly 2000 EUR. The immediate profit is 1100 EUR
+              (2000 EUR proceeds minus 900 EUR base value), but minus
+              the 100 EUR fee loss from earlier we have exactly a
+              taxable profit of 1000 EUR, which also makes sense since
+              we started with 1000 EUR and now have 2000 EUR.
+
+        Note: The exact way how withdrawal, deposit and in general
+        transaction fees are handled should be made user-configurable
+        in future.
 
         """
         if currency == self.currency:
             raise ValueError(
                     'Withdrawing the base currency is not possible.')
         amount = Decimal(amount)
+        fee = Decimal(fee)
         total = self.totals.get(currency, 0)
         on_hold = self.on_hold.get(currency, 0)
         if amount > total - on_hold:
@@ -203,27 +245,38 @@ class BagFIFO(object):
                 "Withdrawn amount ({1} {0}) higher than total available "
                 "({2} {0}, of which {3} {0} are on hold already).".format(
                         currency, amount, total, on_hold))
-        self.on_hold[currency] = on_hold + amount
 
-    def deposit(self, dtime, amount, currency):
-        """Deposit *amount* *currency* into an exchange, making it
-        available for trading.
+        # any fees?
+        if fee > 0:
+            _, cost, _ = self.pay(dtime, fee, currency, is_fee=True)
+            self.profit -= cost
+            log.info("Taxable loss due to fees: %.3f %s",
+                     -cost, self.currency)
 
-        The pair `withdraw` and `deposit` is used for transfers of the
-        same currency from one exhange to another.
+        self.on_hold[currency] = on_hold + amount - fee
 
-        Fees must be paid separately with `pay`.
+    def deposit(self, dtime, currency, amount, fee):
+        """Deposit *amount* monetary units of *currency* into an
+        exchange for a *fee* (also given in *currency*), making it
+        available for trading. The fee is included in amount. The
+        deposit happened at datetime *dtime*.
 
-        If the amount is more than the amount withdrawn before, a
-        warning will be printed and a bag created with a base cost of 0.
+        The pair of methods `withdraw` and `deposit` is used for
+        transfers of the same currency from one exhange to another.
 
-        See also `withdraw`.
+        If the amount is more than the amount withdrawn before (minus
+        fees), a warning will be printed and a bag created with a base
+        cost of 0.
+
+        See also `withdraw` about the money placed 'on-hold' and about
+        the handling of fees.
 
         """
         if currency == self.currency:
             raise ValueError(
                     'Depositing the base currency is not possible.')
         amount = Decimal(amount)
+        fee = Decimal(fee)
         on_hold = self.on_hold.get(currency, 0)
         if amount > on_hold:
             diff = amount - on_hold
@@ -237,12 +290,23 @@ class BagFIFO(object):
             self.buy_with_base_currency(dtime, diff, currency, 0)
         else:
             self.on_hold[currency] = on_hold - amount
+        # any fees?
+        if fee > 0:
+            _, cost, _ = self.pay(dtime, fee, currency, is_fee=True)
+            self.profit -= cost
+            log.info("Taxable loss due to fees: %.3f %s",
+                     -cost, self.currency)
 
-    def pay(self, dtime, amount, currency):
+    def pay(self, dtime, amount, currency, is_fee=False):
         """Pay *amount* with *currency*. The money is taken out of
         the first bag with the proper currency first. The bag's price
         is not changed, but it's current amount and base value are
         decreased. *dtime*, a datetime, is the time of payment.
+
+        Set *is_fee* to tell if this payment is just for fees or not.
+        This only changes the logging output, nothing else. The returned
+        tuple is the same in both cases; whether fees are a taxable loss
+        or not must thus be decided by the caller.
 
         If the amount is higher than available total amount, ValueError
         is raised.
@@ -277,7 +341,9 @@ class BagFIFO(object):
         tprofit = Decimal()
         # due payment:
         to_pay = amount
-        log.info("Paying %.8f %s", to_pay, currency)
+        log.info(
+                "Paying %.8f %s%s",
+                to_pay, currency, " (fees)" if is_fee else "")
         # Find bags with this currency and use them to pay for
         # this, starting from first non-empty bag (FIFO):
         i = self.first_filled_bag
@@ -288,8 +354,9 @@ class BagFIFO(object):
             bag = self.bags[i]
 
             # Spend as much as possible from this bag:
-            log.info("Paying with bag from %s, containing %.8f %s",
-                 bag.dtime, bag.current_amount, bag.currency)
+            log.info("Paying%s with bag from %s, containing %.8f %s",
+                     " fee" if is_fee else "",
+                     bag.dtime, bag.current_amount, bag.currency)
             spent, bvalue, remainder = bag.spend(to_pay)
             log.info("Contents of bag after payment: %.8f %s (spent %.8f %s)",
                  bag.current_amount, bag.currency, spent, currency)
@@ -305,16 +372,18 @@ class BagFIFO(object):
             if short_term:
                 tprofit += (thisrev - bvalue)
 
-            log.info("Profits in this transaction:\n"
-                 "    Original bag cost: %.2f %s (Price %.8f %s/%s)\n"
-                 "    Proceeds         : %.2f %s (Price %.8f %s/%s)\n"
-                 "    Profit/loss      : %.2f %s\n"
-                 "    Taxable?         : %s (held for %s than a year)",
-                 bvalue, self.currency, bag.price, bag.cost_currency, currency,
-                 thisrev, self.currency, rate, self.currency, currency,
-                 (thisrev - bvalue), self.currency,
-                 'yes' if short_term else 'no',
-                 'less' if short_term else 'more')
+            if not is_fee:
+                log.info("Profits in this transaction:\n"
+                     "    Original bag cost: %.2f %s (Price %.8f %s/%s)\n"
+                     "    Proceeds         : %.2f %s (Price %.8f %s/%s)\n"
+                     "    Profit/loss      : %.2f %s\n"
+                     "    Taxable?         : %s (held for %s than a year)",
+                     bvalue, self.currency, bag.price, bag.cost_currency,
+                     currency,
+                     thisrev, self.currency, rate, self.currency, currency,
+                     (thisrev - bvalue), self.currency,
+                     'yes' if short_term else 'no',
+                     'less' if short_term else 'more')
 
             to_pay = remainder
             if to_pay > 0:
@@ -323,7 +392,8 @@ class BagFIFO(object):
             i += 1
 
         # update self.first_filled_bag:
-        while self.bags[self.first_filled_bag].is_empty():
+        while (self.first_filled_bag < len(self.bags)
+                and self.bags[self.first_filled_bag].is_empty()):
             self.first_filled_bag += 1
 
         self.totals[currency] = total - amount
@@ -333,10 +403,16 @@ class BagFIFO(object):
     def process_trade(self, trade):
         log.info(
             'Processing trade: %s', trade.to_csv_line().strip('\n'))
+        if trade.buyval < 0 or trade.sellval < 0 or trade.feeval < 0:
+            raise ValueError(
+                'Negative values for buy, sell or fee amount not supported.')
         if trade.sellcur == self.currency and trade.sellval != 0:
             # Paid for with our base currency, simply add new bag:
             # (The cost is directly translated to the base value
             # of the bags)
+            log.info("Buying %.8f %s for %.8f %s at %s (%s)",
+                trade.buyval, trade.buycur, trade.sellval, trade.sellcur,
+                trade.exchange, trade.dtime)
             self.buy_with_base_currency(
                     dtime=trade.dtime,
                     amount=trade.buyval,
@@ -345,48 +421,29 @@ class BagFIFO(object):
 
         elif not trade.sellcur or trade.sellval == 0:
             # Paid nothing, so it must be a deposit:
-            self.deposit(trade.dtime, trade.buyval, trade.buycur)
-            # any fees?
-            if trade.feeval > 0:
-                _, cost, _ = self.pay(
-                        trade.dtime, trade.feeval, trade.feecur)
-                # TODO make user option how to handle fees.
-
-                # For now, the only logical way how to handle fees
-                # (which are directly resulting from and connected to
-                # trading activity!), is to count the base value of
-                # these fees (recorded in our base currency) as loss:
-                self.profit -= cost
-                # A quick explanation for this: You buy an amount of
-                # Bitcoin for X fiat money, i.e. X fiat is leaving your
-                # bank account. Then you trade, fees are paid, then say
-                # later you have a little less Bitcoin than you
-                # initially bought, due to fees. Then you change your
-                # Bitcoin back to fiat, but at a better price than
-                # earlier such that coincidentally, you get the same
-                # amount X fiat money back into your bank account. For
-                # tax purposes, this must equal a profit of zero. The
-                # only way to have this result is if fees are losses:
-                # For example:
-                # - buy 1BTC @ 1000EUR
-                # - withdrawal & deposit fees: 0.1BTC ->
-                #   0.9BTC @ 900EUR in bag (current total loss: -100EUR)
-                # - sell 0.9BTC for 1000EUR ->
-                #   revenue 100EUR - total loss 100EUR = profit of 0 EUR
-                # - OR: sell 0.9BTC for 2000EUR ->
-                #   revenue 1100EUR - 100EUR = profit of 1000EUR
+            log.info("Depositing %.8f %s at %s (%s, fee: %.8f %s)",
+                trade.buyval, trade.buycur,
+                trade.exchange, trade.dtime,
+                trade.feeval, trade.feecur)
+            if trade.feeval > 0 and trade.buycur != trade.feecur:
+                raise ValueError(
+                    'Sorry, fees with different currency than deposited '
+                    'currency not supported.')
+            self.deposit(
+                    trade.dtime, trade.buycur, trade.buyval, trade.feeval)
 
         elif not trade.buycur or trade.buyval == 0:
             # Got nothing, so it must be a withdrawal:
-            self.withdraw(trade.sellval, trade.sellcur)
-            # any fees?
-            if trade.feeval > 0:
-                _, cost, _ = self.pay(
-                        trade.dtime, trade.feeval, trade.feecur)
-                # TODO make user option how to handle fees.
-                # For now, fees directly connected with trading
-                # activities are losses (see explanation above):
-                self.profit -= cost
+            log.info("Withrawing %.8f %s from %s (%s, fee: %.8f %s)",
+                trade.sellval, trade.sellcur,
+                trade.exchange, trade.dtime,
+                trade.feeval, trade.feecur)
+            if trade.feeval > 0 and trade.sellcur != trade.feecur:
+                raise ValueError(
+                    'Sorry, fees with different currency than withdrawn '
+                    'currency not supported.')
+            self.withdraw(
+                    trade.dtime, trade.sellcur, trade.sellval, trade.feeval)
 
         else:
             # We paid with a currency which must be in some bag and
