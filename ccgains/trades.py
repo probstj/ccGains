@@ -202,7 +202,7 @@ class Trade(object):
 
         if not fee_amount:
             self.feeval = Decimal()
-            if fee_currency != self.sellcur:
+            if fee_currency != self.sellcur and self.buycur:
                 self.feecur = self.buycur
             else:
                 self.feecur = self.sellcur
@@ -272,6 +272,85 @@ class TradeHistory(object):
 
     def __getitem__(self, item):
         return self.tlist[item]
+
+    def add_missing_transaction_fees(self, raise_on_error=True):
+        """Some exchanges does not include withdrawal fees in their
+        exported csv files. This will try to add these missing fees
+        by comparing withdrawn amounts with amounts deposited on other
+        exchanges shortly after withdrawal. Call this only after all
+        transactions from every involved exchange and wallet were
+        imported.
+
+        This uses a really simple algorithm, so it is not guaranteed to
+        work in every case. Basically, it finds the first deposit
+        following each withdrawal and compares the withdrawn amount
+        with the deposited amount. The difference (withdrawn - deposited)
+        is then assigned as the fee for the withdrawal, if this fee
+        is greater than zero. This will not work if there are
+        withdrawals in tight succession whose deposits register in a
+        different order than the withdrawals.
+
+        If *raise_on_error* is True (which is the default), a Valueerror
+        will be raised if a pair is found that cannot possibly match
+        (higher deposit than withdrawal), otherwise only a warning
+        is logged and the withdrawal ignored while the deposit is
+        matched to the next withdrawal.
+
+        """
+        # Filter out all deposits and withdrawals from self.tlist.
+        # Make a list of tuples:
+        #   (tlist index,
+        #    'w' or 'd' for 'withdrawal' OR 'deposit', respectively,
+        #    withdrawal amount - fees OR deposit amount, respectively):
+        translist = []
+        for i, t in enumerate(self.tlist):
+            if t.buyval == 0 and t.sellval > 0:
+                # This should be a withdrawal
+                if t.feeval and t.sellcur != t.feecur:
+                    raise ValueError(
+                        'In trade %i, encountered withdrawal with different '
+                        'fee currency than withdrawn currency.')
+                translist.append((i, 'w', t.sellval - t.feeval))
+            elif t.sellval == 0 and t.buyval > 0:
+                # This should be a deposit
+                translist.append((i, 'd', t.buyval))
+        unhandled_withdrawals = []
+        num_unmatched = 0
+        num_feeless = 0
+        for i, typ, amount in translist:
+            if typ == 'w':
+                unhandled_withdrawals.append((i, amount))
+                num_unmatched += 1
+                num_feeless += self[i].feeval == 0
+            else:
+                # deposit
+                while len(unhandled_withdrawals) > 0:
+                    j, wamount = unhandled_withdrawals[0]
+                    if wamount < amount:
+                        errs = (
+                            "The withdrawal from %s (%.8f %s) is lower than "
+                            "the first deposit (%s, %.8f %s) following it" % (
+                                self[i].dtime, amount, self[i].buycur,
+                                self[j].dtime, wamount, self[j].sellcur))
+                        if raise_on_error:
+                            raise ValueError(errs)
+                        else:
+                            log.warning(errs + " Ignoring this withdrawal, "
+                                        "trying next one.")
+                        del unhandled_withdrawals[0]
+                    else:
+                        # found a match
+                        num_unmatched -= 1
+                        num_feeless -= self[j].feeval == 0
+                        self.tlist[j].feeval += wamount - amount
+                        log.info('amended withdrawal: %s', self[j])
+                        del unhandled_withdrawals[0]
+                        break
+        if len(unhandled_withdrawals) > 0:
+            log.warning(
+                '%i withdrawals could not be matched with deposits, of which '
+                '%i have no assigned withdrawal fees.' % (
+                        num_unmatched, num_feeless))
 
     def append_csv(
             self, file_name, param_locs=range(11), delimiter=',', skiprows=1,
@@ -357,7 +436,9 @@ class TradeHistory(object):
             plocs = TPLOC_POLONIEX_WITHDRAWALS
             log.warning(
                 'Poloniex does not include withdrawal fees in exported '
-                'csv-files. Please include the fees manually.')
+                'csv-files. Please include the fees manually, or call '
+                '`add_missing_transaction_fees` after transactions from all '
+                'relevant exchanges were imported.')
         elif wdata == 'depos':
             plocs = TPLOC_POLONIEX_DEPOSITS
         else:
@@ -457,8 +538,10 @@ class TradeHistory(object):
         self.tlist.extend(tdl)
         self.tlist.extend(txl)
         log.warning(
-            'Bitsquare/Bisq does not include withdrawal fees in exported '
-            'csv-files. Please include the fees manually.')
+                'Bitsquare/Bisq does not include withdrawal fees in exported '
+                'csv-files. Please include the fees manually, or call '
+                '`add_missing_transaction_fees` after transactions from all '
+                'relevant exchanges were imported.')
         log.info("Loaded %i transactions from %s and %s",
                  len(self.tlist) - numtrades,
                  trade_file_name, transactions_file_name)
