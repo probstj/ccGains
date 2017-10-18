@@ -52,13 +52,13 @@ class TestBagFIFO(unittest.TestCase):
         #self.logger.addHandler(self.handler)
 
         # Make up some historic data:
-        rng = pd.date_range('2017-01-01', periods=5, freq='D')
+        self.rng = pd.date_range('2017-01-01', periods=5, freq='D', tz='UTC')
         h1 = historic_data.HistoricData('EUR/BTC')
         h1.data = pd.Series(
-                data=map(D, np.linspace(1000, 3000, num=5)), index=rng)
+                data=map(D, np.linspace(1000, 3000, num=5)), index=self.rng)
         h2 = historic_data.HistoricData('XMR/BTC')
         h2.data = pd.Series(
-                data=map(D, np.linspace(50, 30, num=5)), index=rng)
+                data=map(D, np.linspace(50, 30, num=5)), index=self.rng)
         self.rel = relations.CurrencyRelation(h1, h2)
         self.bf = bags.BagFIFO('EUR', self.rel)
 
@@ -77,9 +77,9 @@ class TestBagFIFO(unittest.TestCase):
 
         # Make up some trades:
         budget = 1000
-        day1 = '2017-01-01'
-        day2 = '2017-01-03'
-        day3 = '2017-01-05'
+        day1 = self.rng[0]
+        day2 = self.rng[2]
+        day3 = self.rng[4]
         btc = self.rel.get_rate(day1, 'EUR', 'BTC') * budget
         t1 = trades.Trade('Buy', day1, 'BTC', btc, 'EUR', budget)
         xmr = self.rel.get_rate(day2, 'BTC', 'XMR') * btc
@@ -107,9 +107,9 @@ class TestBagFIFO(unittest.TestCase):
         budget = 1000
         # 2.5% fee:
         fee_p = D('0.025')
-        day1 = '2017-01-01'
-        day2 = '2017-01-03'
-        day3 = '2017-01-05'
+        day1 = self.rng[0]
+        day2 = self.rng[2]
+        day3 = self.rng[4]
         btc = self.rel.get_rate(day1, 'EUR', 'BTC') * budget
         t1 = trades.Trade('Buy', day1, 'BTC', btc, 'EUR', budget)
         self.bf.process_trade(t1)

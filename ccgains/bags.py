@@ -33,9 +33,12 @@ log = logging.getLogger(__name__)
 
 
 class Bag(object):
-    def __init__(self, dtime, currency, amount, cost_currency, cost):
+    def __init__(self, bag_id, dtime, currency, amount, cost_currency, cost):
         """Create a bag which holds an *amount* of *currency*.
 
+        :param bag_id (integer):
+            A unique number for each bag. Usually the first created bag
+            receives an id of 1, which increases for every bag created.
         :param dtime:
             The datetime when the currency was purchased.
         :param currency:
@@ -51,16 +54,15 @@ class Bag(object):
             bag. This covers all expenses, so fees are included.
 
         """
-        self.original_amount = Decimal(amount)
-        self.current_amount = self.original_amount
-        self.currency = currency
+        self.id = bag_id
+        self.amount = Decimal(amount)
+        self.currency = str(currency).upper()
         # datetime of purchase:
-        self.dtime = dtime
+        self.dtime = pd.Timestamp(dtime)
         # total cost, incl. fees:
-        self.original_cost = Decimal(cost)
-        self.base_value = self.original_cost
-        self.cost_currency = cost_currency
-        self.price = self.original_cost / self.original_amount
+        self.cost = Decimal(cost)
+        self.cost_currency = str(cost_currency).upper()
+        self.price = self.cost / self.amount
 
     def spend(self, amount):
         """Spend some amount out of this bag. This updates the current
@@ -77,21 +79,21 @@ class Bag(object):
 
         """
         amount = Decimal(amount)
-        if amount >= self.current_amount:
+        if amount >= self.amount:
             result = (
-                    self.current_amount,
-                    self.base_value,
-                    amount - self.current_amount)
-            self.current_amount = 0
-            self.base_value = 0
+                    self.amount,
+                    self.cost,
+                    amount - self.amount)
+            self.amount = 0
+            self.cost = 0
             return result
         value = amount * self.price
-        self.current_amount -= amount
-        self.base_value -= value
+        self.amount -= amount
+        self.cost -= value
         return amount, value, 0
 
     def is_empty(self):
-        return self.current_amount == 0
+        return self.amount == 0
 
 
 class BagFIFO(object):
@@ -116,7 +118,6 @@ class BagFIFO(object):
         self.profit = Decimal(0)
         self.bags = []
         self.pdbags = pd.DataFrame()
-        self.first_filled_bag = 0
         # dictionary of {currency: total amount};
         self.totals = {}
         # dictionary of {curreny: amount on hold},
@@ -131,15 +132,36 @@ class BagFIFO(object):
         # the money in a prior bag is on hold - I am not sure if this
         # is allowed tax wise though.
 
+        self._last_date = pd.Timestamp(0, tz='UTC')
+        self.num_created_bags = 0
+
+    def _check_order(self, dtime):
+        """Raise ValueError if *dtime* is older than the last
+        checked datetime. Also complains (raises an error) if
+        *dtime* does not include timezone information.
+
+        """
+        if dtime.tzinfo is None:
+            raise ValueError(
+                'To eliminate ambiguity, only transactions including '
+                'timezone information in their datetime are allowed.')
+        if dtime < self._last_date:
+            raise ValueError(
+                'Trades must be processed in order. Last processed trade '
+                'was from %s, this one is from %s' % (
+                        self._last_date, dtime))
+        self._last_date = dtime
+
     def to_data_frame(self):
         d = [
+                ("id", [b.id for b in self.bags]),
                 ("date", [b.dtime for b in self.bags]),
-                ("amount", [b.current_amount for b in self.bags]),
+                ("amount", [b.amount for b in self.bags]),
                 ("currency", [b.currency for b in self.bags]),
-                ("cost", [b.base_value for b in self.bags]),
+                ("cost", [b.cost for b in self.bags]),
                 ("costcur", [b.cost_currency for b in self.bags])
             ]
-        return pd.DataFrame.from_items(d)
+        return pd.DataFrame.from_items(d).set_index('id')
 
     def __str__(self):
         return self.to_data_frame().to_string(
@@ -155,17 +177,20 @@ class BagFIFO(object):
         substracted from *amount*, but included in *cost*.
 
         """
+        self._check_order(dtime)
         amount = Decimal(amount)
         if amount <= 0:
             return
         if currency == self.currency:
             raise ValueError('Buying the base currency is not possible.')
         self.bags.append(Bag(
+                bag_id=self.num_created_bags + 1,
                 dtime=dtime,
                 currency=currency,
                 amount=amount,
                 cost_currency=self.currency,
                 cost=cost))
+        self.num_created_bags += 1
         self.totals[currency] = (
                 self.totals.get(currency, Decimal()) + amount)
 
@@ -233,6 +258,7 @@ class BagFIFO(object):
         in future.
 
         """
+        self._check_order(dtime)
         if currency == self.currency:
             raise ValueError(
                     'Withdrawing the base currency is not possible.')
@@ -272,6 +298,7 @@ class BagFIFO(object):
         the handling of fees.
 
         """
+        self._check_order(dtime)
         if currency == self.currency:
             raise ValueError(
                     'Depositing the base currency is not possible.')
@@ -321,6 +348,7 @@ class BagFIFO(object):
             held for more than a year.
 
         """
+        self._check_order(dtime)
         if currency == self.currency:
             raise ValueError(
                 'Payments with the base currency are not relevant here.')
@@ -345,22 +373,20 @@ class BagFIFO(object):
                 "Paying %.8f %s%s",
                 to_pay, currency, " (fees)" if is_fee else "")
         # Find bags with this currency and use them to pay for
-        # this, starting from first non-empty bag (FIFO):
-        i = self.first_filled_bag
+        # this, starting from first bag (FIFO):
+        i = 0
         while to_pay > 0:
-            while (self.bags[i].currency != currency
-                   or self.bags[i].is_empty()):
+            while self.bags[i].currency != currency:
                 i += 1
             bag = self.bags[i]
 
             # Spend as much as possible from this bag:
             log.info("Paying%s with bag from %s, containing %.8f %s",
                      " fee" if is_fee else "",
-                     bag.dtime, bag.current_amount, bag.currency)
+                     bag.dtime, bag.amount, bag.currency)
             spent, bvalue, remainder = bag.spend(to_pay)
             log.info("Contents of bag after payment: %.8f %s (spent %.8f %s)",
-                 bag.current_amount, bag.currency, spent, currency)
-
+                 bag.amount, bag.currency, spent, currency)
 
             # The revenue is the value of spent amount at dtime:
             rate = Decimal(
@@ -368,7 +394,8 @@ class BagFIFO(object):
             thisrev = spent * rate
             rev += thisrev
             cost += bvalue
-            short_term = relativedelta(dtime, bag.dtime).years < 1
+            short_term = relativedelta(
+                    dtime.astimezone(bag.dtime.tz), bag.dtime).years < 1
             if short_term:
                 tprofit += (thisrev - bvalue)
 
@@ -389,12 +416,10 @@ class BagFIFO(object):
             if to_pay > 0:
                 log.info("Still to be paid with another bag: %.8f %s",
                      to_pay, currency)
-            i += 1
-
-        # update self.first_filled_bag:
-        while (self.first_filled_bag < len(self.bags)
-                and self.bags[self.first_filled_bag].is_empty()):
-            self.first_filled_bag += 1
+            if bag.is_empty():
+                del self.bags[i]
+            else:
+                i += 1
 
         self.totals[currency] = total - amount
 
@@ -403,6 +428,7 @@ class BagFIFO(object):
     def process_trade(self, trade):
         log.info(
             'Processing trade: %s', trade.to_csv_line().strip('\n'))
+        self._check_order(trade.dtime)
         if trade.buyval < 0 or trade.sellval < 0 or trade.feeval < 0:
             raise ValueError(
                 'Negative values for buy, sell or fee amount not supported.')
@@ -440,7 +466,7 @@ class BagFIFO(object):
                 trade.feeval, trade.feecur)
             if trade.feeval > 0 and trade.sellcur != trade.feecur:
                 raise ValueError(
-                    'Sorry, fees with different currency than withdrawn '
+                    'Fees with different currency than withdrawn '
                     'currency not supported.')
             self.withdraw(
                     trade.dtime, trade.sellcur, trade.sellval, trade.feeval)
