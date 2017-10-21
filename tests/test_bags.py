@@ -33,6 +33,13 @@ import pandas as pd
 import numpy as np
 from decimal import Decimal as D
 import logging
+try:
+    # for Python2:
+    from StringIO import StringIO
+    # in Python 2, io.StringIO won't work
+except ImportError:
+    # Python 3:
+    from io import StringIO
 
 
 class TestBagFIFO(unittest.TestCase):
@@ -139,7 +146,7 @@ class TestBagFIFO(unittest.TestCase):
         # is the same if all trades have been done in the same year. If
         # it is enabled, the profit immediatly after a trade is a little
         # lower (by the fee losses *ffee*), but therefore the new bag's
-        # base value is a lower by *ffee*, so the gains when selling the
+        # base value is lower by *ffee*, so the gains when selling the
         # new bag later will be exactly *ffee* higher, making up for
         # the lower profit counted earlier. Thus enabling it, IF the
         # tax agency allows it, would make it possible to push a small
@@ -161,6 +168,54 @@ class TestBagFIFO(unittest.TestCase):
         for tot in self.bf.totals.values():
             self.assertEqual(tot, 0)
         self.assertEqual(proceeds - budget, self.bf.profit)
+
+    def test_saving_loading(self):
+        # Add handler to the logger (uncomment this to enable output)
+        #self.logger.addHandler(self.handler)
+
+        # Make up some trades:
+        budget = 1000
+        day1 = self.rng[0]
+        day2 = self.rng[2]
+        day3 = self.rng[4]
+        btc = self.rel.get_rate(day1, 'EUR', 'BTC') * budget
+        t1 = trades.Trade('Buy', day1, 'BTC', btc, 'EUR', budget)
+        xmr = self.rel.get_rate(day2, 'BTC', 'XMR') * btc
+        t2 = trades.Trade(
+                'Trade', day2, 'XMR', xmr, 'BTC', btc, 'XMR', '0')
+        proceeds = self.rel.get_rate(day3, 'XMR', 'EUR') * xmr
+        t3 = trades.Trade(
+                'Trade', day3, 'EUR', proceeds, 'XMR', xmr, '', '0')
+
+        # only process first two trades:
+        for t in [t1, t2]:
+            self.bf.process_trade(t)
+            self.log_bags(self.bf)
+            self.logger.info("Profit so far: %.2f %s\n",
+                             self.bf.profit, self.bf.currency)
+
+        # save state
+        outfile = StringIO()
+        self.bf.save(outfile)
+        # create new BagFIFO and restore state:
+        bf2 = bags.BagFIFO('EUR', self.rel)
+        outfile.seek(0)
+        bf2.load(outfile)
+
+        # skip bf2.bags, since the bags are new objects:
+        self.assertDictEqual(
+            {k:v for k, v in self.bf.__dict__.items() if k != 'bags'},
+            {k:v for k, v in bf2.__dict__.items() if k != 'bags'})
+        # But the bags' contents must be equal:
+        for i, b in enumerate(self.bf.bags):
+            self.assertDictEqual(b.__dict__, bf2.bags[i].__dict__)
+
+        # process another trade:
+        self.bf.process_trade(t3)
+        bf2.process_trade(t3)
+
+        # equal, because now, bags list should be empty:
+        self.assertDictEqual(self.bf.__dict__, bf2.__dict__)
 
 
 if __name__ == '__main__':

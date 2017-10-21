@@ -27,16 +27,40 @@
 from decimal import Decimal
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+import json
 
 import logging
 log = logging.getLogger(__name__)
 
 
+def _json_default(obj):
+    if isinstance(obj, Decimal):
+        return str(obj)
+    elif isinstance(obj, Bag):
+        return obj.__dict__
+    elif isinstance(obj, pd.Timestamp):
+        return str(obj)
+    else:
+        raise TypeError(repr(obj) + " is not JSON serializable")
+
+def _json_to_bagfifo_hook(obj):
+    if 'bags' in obj:
+        # obj seems to be the JSON-ified BagFIFO
+        obj['bags'] = [Bag(**bagkw) for bagkw in obj['bags']]
+        obj['profit'] = Decimal(obj['profit'])
+        for key in ['totals', 'on_hold']:
+            obj[key] = {k: Decimal(v) for k, v in obj[key].items()}
+        obj['_last_date'] = pd.Timestamp(obj['_last_date'])
+    return obj
+
+
 class Bag(object):
-    def __init__(self, bag_id, dtime, currency, amount, cost_currency, cost):
+    def __init__(
+            self, id, dtime, currency, amount, cost_currency, cost,
+            price=None):
         """Create a bag which holds an *amount* of *currency*.
 
-        :param bag_id (integer):
+        :param id (integer):
             A unique number for each bag. Usually the first created bag
             receives an id of 1, which increases for every bag created.
         :param dtime:
@@ -52,17 +76,24 @@ class Bag(object):
         :param cost:
             The amount of *cost_currency* paid for the money in this
             bag. This covers all expenses, so fees are included.
+        :param price: (optional, default: None):
+            If *price* is given, *cost* will be ignored and calculated
+            from *price*: *cost* = *amount* * *price*.
 
         """
-        self.id = bag_id
+        self.id = id
         self.amount = Decimal(amount)
         self.currency = str(currency).upper()
         # datetime of purchase:
         self.dtime = pd.Timestamp(dtime)
-        # total cost, incl. fees:
-        self.cost = Decimal(cost)
         self.cost_currency = str(cost_currency).upper()
-        self.price = self.cost / self.amount
+        # total cost, incl. fees:
+        if price is None:
+            self.cost = Decimal(cost)
+            self.price = self.cost / self.amount
+        else:
+            self.price = Decimal(price)
+            self.cost = self.amount * self.price
 
     def spend(self, amount):
         """Spend some amount out of this bag. This updates the current
@@ -95,6 +126,9 @@ class Bag(object):
     def is_empty(self):
         return self.amount == 0
 
+    def __str__(self):
+        return json.dumps(self.__dict__, default=str)
+
 
 class BagFIFO(object):
     def __init__(self, base_currency, relation):
@@ -117,7 +151,6 @@ class BagFIFO(object):
         # The profit (or loss if negative), recorded in self.currency:
         self.profit = Decimal(0)
         self.bags = []
-        self.pdbags = pd.DataFrame()
         # dictionary of {currency: total amount};
         self.totals = {}
         # dictionary of {curreny: amount on hold},
@@ -150,7 +183,67 @@ class BagFIFO(object):
                 'Trades must be processed in order. Last processed trade '
                 'was from %s, this one is from %s' % (
                         self._last_date, dtime))
-        self._last_date = dtime
+        self._last_date = pd.Timestamp(dtime)
+
+    def to_json(self, **kwargs):
+        """Return a JSON formatted string representation of the current
+        state of this BagFIFO and its list of bags.
+
+        As an external utility, self.relation will not be included in
+        this string.
+
+        :param kwargs:
+            Keyword arguments that will be forwarded to `json.dumps`.
+
+        :returns: JSON formatted string
+        """
+        return json.dumps(
+            {k: v for k, v in self.__dict__.items() if k != 'relation'},
+            default=_json_default, **kwargs)
+
+    def save(self, filepath_or_buffer):
+        """Save the current state of this BagFIFO and its list of bags
+        to a JSON formatted file, so that it can later be restored
+        with `self.load`.
+
+        As an external utility, self.relation will not be included in
+        this string.
+
+        :param filepath_or_buffer: The destination file's name, which
+            will be overwritten if existing, or a general buffer with
+            a `write()` method.
+
+        """
+        if hasattr(filepath_or_buffer, 'write'):
+            json.dump(
+                {k: v for k, v in self.__dict__.items() if k != 'relation'},
+                fp=filepath_or_buffer,
+                default=_json_default, indent=4)
+        else:
+            with open(filepath_or_buffer, 'w') as f:
+                self.save(f)
+
+
+    def load(self, filepath_or_buffer):
+        """Restore a previously saved state of a BagFIFO and its list
+        of bags from a JSON formatted file.
+
+        Everything from the current BagFIFO object will be overwritten
+        with the file's contents.
+
+        :param filepath_or_buffer:
+            The filename of the JSON formatted file or a general buffer
+            with a `read()` method streaming the JSON formatted string.
+
+        """
+        if hasattr(filepath_or_buffer, 'read'):
+            d = json.load(
+                    fp=filepath_or_buffer,
+                    object_hook=_json_to_bagfifo_hook)
+            self.__dict__.update(d)
+        else:
+            with open(filepath_or_buffer, 'r') as f:
+                self.load(f)
 
     def to_data_frame(self):
         d = [
@@ -184,7 +277,7 @@ class BagFIFO(object):
         if currency == self.currency:
             raise ValueError('Buying the base currency is not possible.')
         self.bags.append(Bag(
-                bag_id=self.num_created_bags + 1,
+                id=self.num_created_bags + 1,
                 dtime=dtime,
                 currency=currency,
                 amount=amount,
