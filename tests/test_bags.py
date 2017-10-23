@@ -67,7 +67,6 @@ class TestBagFIFO(unittest.TestCase):
         h2.data = pd.Series(
                 data=map(D, np.linspace(50, 30, num=5)), index=self.rng)
         self.rel = relations.CurrencyRelation(h1, h2)
-        self.bf = bags.BagFIFO('EUR', self.rel)
 
     def tearDown(self):
         for h in self.logger.handlers[::-1]:
@@ -78,100 +77,149 @@ class TestBagFIFO(unittest.TestCase):
         self.logger.info("State of bags: \n%s",
                 '    ' + '\n    '.join(str(bagfifo).split('\n')))
 
+    def trading_set(
+            self, bagfifo, budget, currency, dayslist, currlist, feelist):
+        """Starting with a budget, exchange all of the available budget
+        every day in a given list to another currency.
+
+        The trades will be processed by *bagfifo* and exchange rates
+        taken from self.rel. Make sure that the involved currencies'
+        exchange rates for the given days are available in self.rel.
+
+        :param bagfifo: The BagFIFO object which will process the trades
+        :param budget: The starting budget
+        :param currency: The currency of starting budget
+        :param dayslist: List of datetimes. On each of these days, one
+            currency exchange, using all of the available budget in
+            whatever currency that day, will be made.
+        :param currlist: List of currencies, same length as *dayslist*.
+            Each day, the available budget will be exchanged into
+            the day's currency in this list.
+        :param feelist: List of (fee_portion, fee_currency)-tuples, same
+            length as *dayslist*. For each day's trade, a ratio of
+            the budget (or currency traded into) will be used for paying
+            the exchange fee. This fee amounts to `fee_portion * budget`
+            or `fee_portion * budget * exhange_rate`, depending on
+            fee_currency.
+        :returns: The budget after the last trade, i.e. the available
+            amount of currency currlist[-1].
+
+        Examine *bagfifo* to see profits etc. afterwards.
+
+        Some intermediate results about the profits and bag's status
+        will be logged (info level). To see this, add a handler to
+        self.logger before calling this.
+
+        """
+        current_budget = D(budget)
+        current_curr = currency
+        for i, day in enumerate(dayslist):
+            to_curr = currlist[i]
+            fee_p, fee_c = D(feelist[i][0]), feelist[i][1]
+            rate = D(self.rel.get_rate(day, current_curr, to_curr))
+            if fee_c == current_curr or fee_p == 0:
+                fee = current_budget * fee_p
+                to_amount = rate * (current_budget - fee)
+            elif fee_c == to_curr:
+                to_amount = rate * current_budget
+                fee = to_amount * fee_p
+                to_amount -= fee
+            else:
+                raise ValueError(
+                    'The fee currency must be one of the two available '
+                    'currencies on the given day: either the current '
+                    'budget\'s or the currency to be traded into.')
+            trade = trades.Trade(
+                    'Trade', day, to_curr, to_amount,
+                    current_curr, current_budget, fee_c, fee)
+            bagfifo.process_trade(trade)
+            self.log_bags(bagfifo)
+            self.logger.info(
+                    "Profit so far: %.2f %s\n",
+                    bagfifo.profit, bagfifo.currency)
+            current_budget = to_amount
+            current_curr = to_curr
+        return to_amount
+
     def test_trading_profits_no_fees(self):
         # Add handler to the logger (uncomment this to enable output)
         #self.logger.addHandler(self.handler)
 
-        # Make up some trades:
-        budget = 1000
-        day1 = self.rng[0]
-        day2 = self.rng[2]
-        day3 = self.rng[4]
-        btc = self.rel.get_rate(day1, 'EUR', 'BTC') * budget
-        t1 = trades.Trade('Buy', day1, 'BTC', btc, 'EUR', budget)
-        xmr = self.rel.get_rate(day2, 'BTC', 'XMR') * btc
-        t2 = trades.Trade(
-                'Trade', day2, 'XMR', xmr, 'BTC', btc, 'XMR', '0')
-        proceeds = self.rel.get_rate(day3, 'XMR', 'EUR') * xmr
-        t3 = trades.Trade(
-                'Trade', day3, 'EUR', proceeds, 'XMR', xmr, '', '0')
-        self.test_trades = [t1, t2, t3]
-        for t in self.test_trades:
-            self.bf.process_trade(t)
-            self.log_bags(self.bf)
-            self.logger.info("Profit so far: %.2f %s\n",
-                             self.bf.profit, self.bf.currency)
+        bagfifo = bags.BagFIFO('EUR', self.rel)
+        budget=1000
+        # Make up and process some trades:
+        proceeds = self.trading_set(
+            bagfifo,
+            budget=budget,
+            currency='EUR',
+            dayslist=[self.rng[0], self.rng[2], self.rng[4]],
+            currlist=['BTC', 'XMR', 'EUR'],
+            feelist=[(0, ''), (0, ''), (0, '')])
 
-        for tot in self.bf.totals.values():
+        for tot in bagfifo.totals.values():
             self.assertEqual(tot, 0)
-        self.assertEqual(proceeds - budget, self.bf.profit)
+        self.assertEqual(proceeds - budget, bagfifo.profit)
 
-    def test_trading_profits_with_fee(self):
+    def test_trading_profits_with_fees(self):
         # Add handler to the logger (uncomment this to enable output)
         #self.logger.addHandler(self.handler)
 
-        # Make up some trades:
-        budget = 1000
-        # 2.5% fee:
-        fee_p = D('0.025')
-        day1 = self.rng[0]
-        day2 = self.rng[2]
-        day3 = self.rng[4]
-        btc = self.rel.get_rate(day1, 'EUR', 'BTC') * budget
-        t1 = trades.Trade('Buy', day1, 'BTC', btc, 'EUR', budget)
-        self.bf.process_trade(t1)
-        p1 = self.bf.profit
-        self.log_bags(self.bf)
-        self.logger.info("Profit so far: %.2f %s\n",
-                         p1, self.bf.currency)
+        budget=1000
+        # List of fee percentages to be tested:
+        fee_p = [D('0.00025'), D(1)/D(3), D(2)/D(3)]
+        days = [self.rng[0], self.rng[2], self.rng[4]]
+        currlist = ['BTC', 'XMR', 'EUR']
+        for fee in fee_p:
+            for trade_to_fee in range(len(currlist)):
+                for i in range(2):
+                    feelist = [(0, '')] * len(currlist)
+                    feelist[trade_to_fee] = (fee, currlist[trade_to_fee - i])
+                    self.logger.info("Testing fee list %s" % feelist)
+                    self.logger.info("Working with new empty BagFIFO object")
+                    bagfifo = bags.BagFIFO('EUR', self.rel)
+                    # Make up and process some trades:
+                    proceeds = self.trading_set(
+                        bagfifo,
+                        budget=budget,
+                        currency='EUR',
+                        dayslist=days,
+                        currlist=currlist,
+                        feelist=feelist)
 
-        xmr = self.rel.get_rate(day2, 'BTC', 'XMR') * btc
-        xmrfee = xmr * fee_p
-        xmr -= xmrfee
-        t2 = trades.Trade(
-                'Trade', day2, 'XMR', xmr, 'BTC', btc, 'XMR', xmrfee)
-        self.bf.process_trade(t2)
-        self.log_bags(self.bf)
-        self.logger.info("Profit so far: %.2f %s\n",
-                         self.bf.profit, self.bf.currency)
-        # expected profit without fees:
-        p02 = self.rel.get_rate(day2, 'BTC', 'EUR') * btc - budget
-        # actual profit
-        pf2 = self.bf.profit
-        # fee in fiat currency:
-        ffee = self.rel.get_rate(day2, 'XMR', 'EUR') * xmrfee
-        # TODO: The following is not implemented yet. Maybe, if I'll
-        # implement it later, it will be a configurable option.
-        # With or without it, the end result (i.e. the taxable profit)
-        # is the same if all trades have been done in the same year. If
-        # it is enabled, the profit immediatly after a trade is a little
-        # lower (by the fee losses *ffee*), but therefore the new bag's
-        # base value is lower by *ffee*, so the gains when selling the
-        # new bag later will be exactly *ffee* higher, making up for
-        # the lower profit counted earlier. Thus enabling it, IF the
-        # tax agency allows it, would make it possible to push a small
-        # amount of profits into the next year or even cancel them
-        # completely if the new bag is held for more than a year.
-        #self.assertEqual(pf2, p02 - ffee)
-        #self.assertEqual(
-        #        self.bf.bags[-1].base_value,
-        #        (1 - fee_p) * (budget + p02))
+                    for tot in bagfifo.totals.values():
+                        self.assertEqual(tot, 0)
+                    self.assertEqual(proceeds - budget, bagfifo.profit)
 
-        proceeds = self.rel.get_rate(day3, 'XMR', 'EUR') * xmr
-        t3 = trades.Trade(
-                'Trade', day3, 'EUR', proceeds, 'XMR', xmr, '', '0')
-        self.bf.process_trade(t3)
-        self.log_bags(self.bf)
-        self.logger.info("Profit so far: %.2f %s\n",
-                         self.bf.profit, self.bf.currency)
+    def test_bag_cost_after_trading_with_fees(self):
+        # Add handler to the logger (uncomment this to enable output)
+        #self.logger.addHandler(self.handler)
 
-        for tot in self.bf.totals.values():
-            self.assertEqual(tot, 0)
-        self.assertEqual(proceeds - budget, self.bf.profit)
+        budget=1000
+        # List of fee percentages to be tested:
+        fee_p = [0, D('0.00025'), D(1)/D(3), D(2)/D(3)]
+        days = [self.rng[0], self.rng[2]]
+        currlist = ['BTC', 'XMR']
+        for fee in fee_p:
+            for fee_cur in currlist:
+                bagfifo = bags.BagFIFO('EUR', self.rel)
+                self.logger.info("Working with new empty BagFIFO object")
+                # Make up and process some trades:
+                self.trading_set(
+                    bagfifo,
+                    budget=budget,
+                    currency='EUR',
+                    dayslist=days,
+                    currlist=currlist,
+                    feelist=[(0, ''), (fee, fee_cur)])
+
+                self.assertEqual(
+                        bagfifo.bags[-1].cost, budget + bagfifo.profit)
 
     def test_saving_loading(self):
         # Add handler to the logger (uncomment this to enable output)
         #self.logger.addHandler(self.handler)
+
+        bagfifo = bags.BagFIFO('EUR', self.rel)
 
         # Make up some trades:
         budget = 1000
@@ -189,14 +237,14 @@ class TestBagFIFO(unittest.TestCase):
 
         # only process first two trades:
         for t in [t1, t2]:
-            self.bf.process_trade(t)
-            self.log_bags(self.bf)
+            bagfifo.process_trade(t)
+            self.log_bags(bagfifo)
             self.logger.info("Profit so far: %.2f %s\n",
-                             self.bf.profit, self.bf.currency)
+                             bagfifo.profit, bagfifo.currency)
 
         # save state
         outfile = StringIO()
-        self.bf.save(outfile)
+        bagfifo.save(outfile)
         # create new BagFIFO and restore state:
         bf2 = bags.BagFIFO('EUR', self.rel)
         outfile.seek(0)
@@ -204,18 +252,18 @@ class TestBagFIFO(unittest.TestCase):
 
         # skip bf2.bags, since the bags are new objects:
         self.assertDictEqual(
-            {k:v for k, v in self.bf.__dict__.items() if k != 'bags'},
+            {k:v for k, v in bagfifo.__dict__.items() if k != 'bags'},
             {k:v for k, v in bf2.__dict__.items() if k != 'bags'})
         # But the bags' contents must be equal:
-        for i, b in enumerate(self.bf.bags):
+        for i, b in enumerate(bagfifo.bags):
             self.assertDictEqual(b.__dict__, bf2.bags[i].__dict__)
 
         # process another trade:
-        self.bf.process_trade(t3)
+        bagfifo.process_trade(t3)
         bf2.process_trade(t3)
 
         # equal, because now, bags list should be empty:
-        self.assertDictEqual(self.bf.__dict__, bf2.__dict__)
+        self.assertDictEqual(bagfifo.__dict__, bf2.__dict__)
 
 
 if __name__ == '__main__':
