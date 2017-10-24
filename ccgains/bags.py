@@ -28,6 +28,7 @@ from decimal import Decimal
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 import json
+from os import path
 
 import logging
 log = logging.getLogger(__name__)
@@ -149,7 +150,8 @@ class Bag(object):
 
 
 class BagFIFO(object):
-    def __init__(self, base_currency, relation):
+    def __init__(
+            self, base_currency, relation, json_dump='./precrash.json'):
         """Create a BagFIFO object.
 
         param: base_currency:
@@ -162,6 +164,13 @@ class BagFIFO(object):
             A CurrencyRelation object which serves exchange rates
             between all currencies involved in trades which will later
             be added to this BagFIFO.
+
+        :param json_dump (filename):
+            If specified, the state of the BagFIFO will be saved as
+            JSON formatted file with this file name just before an error
+            is raised due to missing or conflicting data. If the error
+            is fixed, the state can be loaded from this file and the
+            calculation might be able to continue from that point.
 
         """
         self.currency = str(base_currency).upper()
@@ -185,6 +194,16 @@ class BagFIFO(object):
 
         self._last_date = pd.Timestamp(0, tz='UTC')
         self.num_created_bags = 0
+        self.dump_file = path.abspath(json_dump) if json_dump else None
+
+    def _abort(self, msg):
+        """Raise ValueError with the message *msg*.
+        Before raising, the current state of the file will be saved
+        to self.dump_file.
+
+        """
+        self.save(self.dump_file)
+        raise ValueError(msg)
 
     def _check_order(self, dtime):
         """Raise ValueError if *dtime* is older than the last
@@ -193,11 +212,11 @@ class BagFIFO(object):
 
         """
         if dtime.tzinfo is None:
-            raise ValueError(
+            self._abort(
                 'To eliminate ambiguity, only transactions including '
                 'timezone information in their datetime are allowed.')
         if dtime < self._last_date:
-            raise ValueError(
+            self._abort(
                 'Trades must be processed in order. Last processed trade '
                 'was from %s, this one is from %s' % (
                         self._last_date, dtime))
@@ -237,6 +256,8 @@ class BagFIFO(object):
                 {k: v for k, v in self.__dict__.items() if k != 'relation'},
                 fp=filepath_or_buffer,
                 default=_json_default, indent=4)
+            if hasattr(filepath_or_buffer, 'name'):
+                log.info("Saved bags' state to %s", filepath_or_buffer.name)
         else:
             with open(filepath_or_buffer, 'w') as f:
                 self.save(f)
@@ -258,7 +279,26 @@ class BagFIFO(object):
             d = json.load(
                     fp=filepath_or_buffer,
                     object_hook=_json_to_bagfifo_hook)
+            # remove zero totals and on_hold:
+            for td in [d['totals'], d['on_hold']]:
+                for key in list(td.keys()):
+                    if td[key] == 0:
+                        del td[key]
             self.__dict__.update(d)
+            if hasattr(filepath_or_buffer, 'name'):
+                log.info("Restored bags' state from %s",
+                         filepath_or_buffer.name)
+            # check consistency of totals:
+            check_totals = {}
+            for bag in self.bags:
+                if bag.amount != 0:
+                    check_totals[bag.currency] = (
+                        check_totals.get(bag.currency, 0)
+                        + bag.amount)
+            if check_totals != self.totals:
+                raise Exception(
+                    "Could not load, file is corrupted "
+                    "(totals don't add up).")
         else:
             with open(filepath_or_buffer, 'r') as f:
                 self.load(f)
@@ -293,7 +333,7 @@ class BagFIFO(object):
         if amount <= 0:
             return
         if currency == self.currency:
-            raise ValueError('Buying the base currency is not possible.')
+            self._abort('Buying the base currency is not possible.')
         self.bags.append(Bag(
                 id=self.num_created_bags + 1,
                 dtime=dtime,
@@ -371,14 +411,14 @@ class BagFIFO(object):
         """
         self._check_order(dtime)
         if currency == self.currency:
-            raise ValueError(
+            self._abort(
                     'Withdrawing the base currency is not possible.')
         amount = Decimal(amount)
         fee = Decimal(fee)
         total = self.totals.get(currency, 0)
         on_hold = self.on_hold.get(currency, 0)
         if amount > total - on_hold:
-            raise ValueError(
+            self._abort(
                 "Withdrawn amount ({1} {0}) higher than total available "
                 "({2} {0}, of which {3} {0} are on hold already).".format(
                         currency, amount, total, on_hold))
@@ -411,7 +451,7 @@ class BagFIFO(object):
         """
         self._check_order(dtime)
         if currency == self.currency:
-            raise ValueError(
+            self._abort(
                     'Depositing the base currency is not possible.')
         amount = Decimal(amount)
         fee = Decimal(fee)
@@ -424,10 +464,14 @@ class BagFIFO(object):
                         currency, amount, on_hold)
                 + " Assuming the additional amount ({1} {0}) was bought "
                 "with 0 {2}.".format(currency, diff, self.currency))
-            self.on_hold[currency] = Decimal()
+            if currency in self.on_hold:
+                del self.on_hold[currency]
             self.buy_with_base_currency(dtime, diff, currency, 0)
         else:
-            self.on_hold[currency] = on_hold - amount
+            if on_hold - amount == 0:
+                del self.on_hold[currency]
+            else:
+                self.on_hold[currency] = on_hold - amount
         # any fees?
         if fee > 0:
             cost, _, _, _ = self.pay(dtime, currency, fee, is_fee=True)
@@ -470,13 +514,13 @@ class BagFIFO(object):
         """
         self._check_order(dtime)
         if currency == self.currency:
-            raise ValueError(
+            self._abort(
                 'Payments with the base currency are not relevant here.')
         total = self.totals.get(currency, 0)
         on_hold = self.on_hold.get(currency, 0)
         amount = Decimal(amount)
         if amount > total - on_hold:
-            raise ValueError(
+            self._abort(
                 "Amount to pay ({1} {0}) is higher than total available "
                 "({2} {0}). ({3} {0} is on hold)".format(
                         currency, amount, total, on_hold))
@@ -488,6 +532,15 @@ class BagFIFO(object):
         rev = Decimal()
         # revenue only of short term trades:
         st_rev = Decimal()
+        # exchange rate at time of payment:
+        try:
+            rate = Decimal(
+                self.relation.get_rate(dtime, currency, self.currency))
+        except KeyError:
+            self._abort(
+                'Could not fetch the price for currency_pair %s_%s on '
+                '%s from provided CurrencyRelation object.' % (
+                        currency, self.currency, dtime))
         # due payment:
         to_pay = amount
         log.info(
@@ -499,6 +552,10 @@ class BagFIFO(object):
         while to_pay > 0:
             while self.bags[i].currency != currency:
                 i += 1
+                if i == len(self.bags):
+                    # Corrupt data error: don't dump state.
+                    raise Exception(
+                        "There are no bags left with the requested currency")
             bag = self.bags[i]
 
             # Spend as much as possible from this bag:
@@ -510,8 +567,6 @@ class BagFIFO(object):
                  bag.amount, bag.currency, spent, currency)
 
             # The revenue is the value of spent amount at dtime:
-            rate = Decimal(
-                    self.relation.get_rate(dtime, currency, self.currency))
             thisrev = spent * rate
             rev += thisrev
             cost += bvalue
@@ -542,7 +597,10 @@ class BagFIFO(object):
             else:
                 i += 1
 
-        self.totals[currency] = total - amount
+        if total - amount == 0:
+            del self.totals[currency]
+        else:
+            self.totals[currency] = total - amount
 
         return st_cost, st_rev, cost, rev
 
@@ -561,7 +619,7 @@ class BagFIFO(object):
             'Processing trade: %s', trade.to_csv_line().strip('\n'))
         self._check_order(trade.dtime)
         if trade.buyval < 0 or trade.sellval < 0 or trade.feeval < 0:
-            raise ValueError(
+            self._abort(
                 'Negative values for buy, sell or fee amount not supported.')
         if trade.sellcur == self.currency and trade.sellval != 0:
             # Paid for with our base currency, simply add new bag:
@@ -583,8 +641,8 @@ class BagFIFO(object):
                 trade.exchange, trade.dtime,
                 trade.feeval, trade.feecur)
             if trade.feeval > 0 and trade.buycur != trade.feecur:
-                raise ValueError(
-                    'Sorry, fees with different currency than deposited '
+                self._abort(
+                    'Fees with different currency than deposited '
                     'currency not supported.')
             self.deposit(
                     trade.dtime, trade.buycur, trade.buyval, trade.feeval)
@@ -596,7 +654,7 @@ class BagFIFO(object):
                 trade.exchange, trade.dtime,
                 trade.feeval, trade.feecur)
             if trade.feeval > 0 and trade.sellcur != trade.feecur:
-                raise ValueError(
+                self._abort(
                     'Fees with different currency than withdrawn '
                     'currency not supported.')
             self.withdraw(
@@ -622,7 +680,7 @@ class BagFIFO(object):
                     # fee is not included in buyval
                     fee_p = trade.feeval / (trade.buyval + trade.feeval)
                 else:
-                    raise ValueError(
+                    self._abort(
                         'Fees with different currency than one of the '
                         'exchanged currencies not supported.')
             else:
