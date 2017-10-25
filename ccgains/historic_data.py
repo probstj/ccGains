@@ -28,6 +28,10 @@ from os import path
 import pandas as pd
 import requests
 from time import sleep
+from dateutil import tz
+
+import logging
+log = logging.getLogger(__name__)
 
 def resample_weighted_average(
         df, freq, data_col, weight_col, include_weights=False):
@@ -102,7 +106,7 @@ class HistoricData(object):
     def get_price(self, dtime):
         """Return the price at datetime *dtime*"""
         df = self.prepare_request(dtime)
-        return df.loc[pd.Timestamp(dtime).floor(df.index.freq)]
+        return df.at[pd.Timestamp(dtime).floor(df.index.freq)]
 
 
 class HistoricDataCSV(HistoricData):
@@ -149,12 +153,12 @@ class HistoricDataCSV(HistoricData):
             if csvtime <= h5time:
                 # Quick load from h5 file, but only if data matches:
                 self.file_name = fbase + '.h5'
-                with pd.HDFStore(self.file_name, mode='r') as store:
-                    if self.dataset in store:
+                try:
+                    with pd.HDFStore(self.file_name, mode='r') as store:
                         self.data = store[self.dataset]
-                    else:
-                        # Will force csv to be reloaded:
-                        h5time = 0
+                except (KeyError, AttributeError, IOError):
+                    # Will force csv to be reloaded:
+                    h5time = 0
 
             if csvtime > h5time:
                 self.data = pd.read_csv(
@@ -216,88 +220,182 @@ class HistoricDataAPI(HistoricData):
         # Poloniex does not allow more than 6 queries per second;
         # Wait at least this number of seconds between queries:
         self.query_wait_time = 0.17
+        # Poloniex limits the amount of trades returned per query:
+        self.max_trades_per_query = 50000
         self.command = 'returnTradeHistory'
-        self.currency_pair = '{0:s}_{1:s}'.format(self.cto, self.cfrom)
-        self.file_name = path.join(
-                cache_folder,
-                'Poloniex_{0:s}_{1:s}.h5'.format(
-                        self.currency_pair, self.interval))
-        # See if the currency pair exists:
+        self.currency_pair = '{0.cto:s}_{0.cfrom:s}'.format(self)
         self.last_query_time = pd.Timestamp.now()
-        if not path.exists(self.file_name):
-            # If a cache with the correct file name already exists,
-            # there's no need to query the api again
+        file_name = path.join(
+            cache_folder,
+            'Poloniex_{0.cto:s}_{0.cfrom:s}_{0.interval:s}.h5'.format(self))
+        # flipped currency pair:
+        file_name_f = path.join(
+            cache_folder,
+            'Poloniex_{0.cfrom:s}_{0.cto:s}_{0.interval:s}.h5'.format(self))
+        # See if the currency pair is already cached:
+        if path.exists(file_name):
+            self.file_name = file_name
+        elif path.exists(file_name_f):
+            # flip currency pair:
+            self.cfrom, self.cto = self.cto, self.cfrom
+            self.unit = self.cto + '/' + self.cfrom
+            self.file_name = file_name_f
+            self.currency_pair = '{0.cto:s}_{0.cfrom:s}'.format(self)
+        else:
+            # Query the api to see if the pair is available:
             req = requests.get(
                 self.url,
                 params={'command' : 'returnTicker'})
-            if not self.currency_pair in req.json():
+            if self.currency_pair in req.json():
+                self.file_name = file_name
+            else:
                 # try if flipped currency pair is available:
-                currency_pair2 = '{0:s}_{1:s}'.format(self.cfrom, self.cto)
-                if not currency_pair2 in req.json():
+                currency_pair_f = '{0.cfrom:s}_{0.cto:s}'.format(self)
+                if not currency_pair_f in req.json():
                     raise ValueError(
                         'Neither currency pair "{0:s}" nor pair "{1:s}" is '
                         'available on "{2:s}".'.format(
-                                self.currency_pair, currency_pair2, self.url))
+                            self.currency_pair, currency_pair_f, self.url))
                 # flip currency pair:
                 self.cfrom, self.cto = self.cto, self.cfrom
                 self.unit = self.cto + '/' + self.cfrom
-                self.currency_pair = currency_pair2
-                self.file_name = path.join(
-                        cache_folder,
-                        'Poloniex_{0:s}_{1:s}.h5'.format(
-                                self.currency_pair, self.interval))
+                self.currency_pair = currency_pair_f
+                self.file_name = file_name_f
+
+    def _fetch_from_api(self, start, end=None):
+        """Fetch historical trading data from API.
+
+        :param start: UNIX Timestamp (seconds); Start of range to fetch.
+        :param end: UNIX timestamp (seconds); End of range to fetch.
+            If None (default), will fetch a range of one day, i.e.
+            end will be `start + 86400`.
+        :returns: tuple (number of fetched trades, resampled data)
+
+        The returned data will be resampled to `self.interval`. The
+        data will consist of weighted historical prices, averaged over
+        each interval using the traded amounts as weights.
+
+        In case there is a limit on the number of trades returned by
+        the API, not the full requested range from `start` to `end`
+        can be returned by this function. Check the returned
+        data and the number of fetched trades to determine if data
+        is missing. In such a case, the weighted averages of prices
+        at the missing ends of the range cannot be trusted.
+
+        """
+        if end is None:
+            # fetch a time span of one day:
+            end = start + 86400
+        # Wait for the min call time to pass:
+        now = pd.Timestamp.now()
+        delta = (now - self.last_query_time).total_seconds()
+        self.last_query_time = now
+        if delta <= self.query_wait_time:
+            log.info('waiting %f s', self.query_wait_time - delta)
+            sleep(self.query_wait_time - delta)
+            log.info('continuing')
+        # Make request:
+        req = requests.get(
+                self.url,
+                params={'command': self.command,
+                        'currencyPair': self.currency_pair,
+                        'start': int(start),
+                        'end': int(end)})
+        log.info('Fetched historical price data with request: %s', req.url)
+        try:
+            df = pd.read_json(
+                req.text, orient='records', precise_float=True,
+                convert_axes=False, convert_dates=['date'],
+                keep_default_dates=False, dtype={
+                        'tradeID': False, 'globalTradeID': False,
+                        'total': False, 'type': False, 'date': False,
+                        'rate': float, 'amount': float})
+            log.info('Successfully fetched %i trades', len(df))
+        except ValueError:
+            # There might have been an error returned from Poloniex,
+            # which cannot be parsed the same way than regular data.
+            j = pd.io.json.loads(req.text)
+            if 'error' in j:
+                raise ValueError(
+                    "Poloniex API returned error: {0:s}\n"
+                    "Requested URL was: {1:s}".format(
+                            j['error'],
+                            req.url))
+            else:
+                raise
+        df.set_index('date', inplace=True)
+
+        # Get weighted prices, resampled with interval:
+        # (this will only return one column, the weighted prices;
+        # the total volume won't be needed anymore)
+        data = resample_weighted_average(
+                df, self.interval, 'rate', 'amount')
+
+        # In case the data has been upsampled (Some events
+        # beeing more separated than interval), the resulting
+        # Series will have some NaNs. Forward-fill them with
+        # the last prices before:
+        data.ffill(inplace=True)
+
+        if data.index.tzinfo is None:
+            data.index = data.index.tz_localize('UTC')
+
+        return len(df), data
 
     def prepare_request(self, dtime):
         """Return a Pandas DataFrame which contains the data for the
         requested datetime *dtime*.
 
         """
-        dtime = pd.Timestamp(dtime)
+        dtime = pd.Timestamp(dtime).tz_convert(tz.tzutc())
         key = "d{a:04d}{m:02d}{d:02d}".format(
                 a=dtime.year, m=dtime.month, d=dtime.day)
         with pd.HDFStore(self.file_name, mode='a') as store:
             if key in store:
-                return store.get(key)
-            else:
-                # We need to fetch the data from the poloniex api
-                start = dtime.floor('D').value // 10 ** 9
-                # fetch a time span of one day:
-                end = start + 86400
-                # Wait for the min call time to pass:
-                now = pd.Timestamp.now()
-                delta = (now - self.last_query_time).total_seconds()
-                self.last_query_time = now
-                if delta <= self.query_wait_time:
-                    sleep(self.query_wait_time - delta)
-                # Make request:
-                req = requests.get(
-                        self.url,
-                        params={'command': self.command,
-                                'currencyPair': self.currency_pair,
-                                'start': start,
-                                'end': end})
                 try:
-                    df = pd.read_json(
-                        req.text, orient='records', precise_float=True,
-                        convert_axes=False, convert_dates=['date'],
-                        keep_default_dates=False, dtype={
-                                'tradeID': False, 'globalTradeID': False,
-                                'total': False, 'type': False, 'date': False,
-                                'rate': float, 'amount': float})
-                except ValueError:
-                    # There might have been an error returned from Poloniex,
-                    # which cannot be parsed the same way than regular data.
-                    j = pd.json.loads(req.text)
-                    if 'error' in j:
-                        raise ValueError(
-                            "Poloniex API returned error: {0:s}\n"
-                            "Requested URL was: {1:s}".format(
-                                    j['error'],
-                                    req.url))
-                    else:
-                        raise
-                df.set_index('date', inplace=True)
-                self.data = resample_weighted_average(
-                        df, self.interval, 'rate', 'amount')
-                store.put(key, self.data, format="fixed")
-                return self.data
+                    self.data = store.get(key)
+                    # Check whether the data can be accessed:
+                    self.data.at[
+                            pd.Timestamp(dtime).floor(self.data.index.freq)]
+                    return self.data
+                except (KeyError, AttributeError):
+                    # In case the hdf5 file got corrupted somehow,
+                    # with the requested date missing from the data,
+                    # reload the data from the API:
+                    log.warning(
+                        'Date %s missing in cached data. '
+                        'Repeating request to API', dtime)
+
+            # We need to fetch the data from the poloniex api:
+            start = dtime.floor('D').value // 10 ** 9
+            count, self.data = self._fetch_from_api(start)
+
+            # Did we reach the limit?
+            while count == self.max_trades_per_query:
+                # The API might not have returned all requested trades.
+                # If Poloniex omits data, the end of the requested range
+                # is returned.
+                # Remove first faulty interval:
+                # (faulty because data might be missing)
+                del self.data[self.data.index[0]]
+                # end time of next request:
+                end = self.data.index[0].value // 10 ** 9 - 1
+                # new request:
+                count, data = self._fetch_from_api(start, end)
+                if len(data) <= 1 and count == self.max_trades_per_query:
+                    # It seems our interval is too big or there are just
+                    # too many trades in the interval, so that we cannot
+                    # fetch one interval with a single request.
+                    raise Exception(
+                        "There are too many trades in the chosen "
+                        "interval of %s ending on %s. Please try again "
+                        "with an HistoricDataAPI object with smaller "
+                        "interval size." % (
+                            self.data.index.freq,
+                            self.data.index[0]))
+                self.data = self.data.combine_first(data)
+
+
+
+            store.put(key, self.data, format="fixed")
+            return self.data
