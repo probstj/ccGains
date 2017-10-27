@@ -29,6 +29,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 import json
 from os import path
+from operator import attrgetter
 
 import logging
 log = logging.getLogger(__name__)
@@ -52,24 +53,23 @@ def is_short_term(adate, tdate):
             tdate.astimezone(adate.tzinfo), adate).years) < 1
 
 
-def _json_default(obj):
+def _json_encode_default(obj):
     if isinstance(obj, Decimal):
-        return str(obj)
+        return {'type(Decimal)': str(obj)}
     elif isinstance(obj, Bag):
-        return obj.__dict__
+        return {'type(Bag)': obj.__dict__}
     elif isinstance(obj, pd.Timestamp):
-        return str(obj)
+        return {'type(datetime)': str(obj)}
     else:
         raise TypeError(repr(obj) + " is not JSON serializable")
 
-def _json_to_bagfifo_hook(obj):
-    if 'bags' in obj:
-        # obj seems to be the JSON-ified BagFIFO
-        obj['bags'] = [Bag(**bagkw) for bagkw in obj['bags']]
-        obj['profit'] = Decimal(obj['profit'])
-        for key in ['totals', 'on_hold']:
-            obj[key] = {k: Decimal(v) for k, v in obj[key].items()}
-        obj['_last_date'] = pd.Timestamp(obj['_last_date'])
+def _json_decode_hook(obj):
+    if 'type(Decimal)' in obj:
+        return Decimal(obj['type(Decimal)'])
+    elif 'type(Bag)' in obj:
+        return Bag(**obj['type(Bag)'])
+    elif 'type(datetime)' in obj:
+        return pd.Timestamp(obj['type(datetime)'])
     return obj
 
 
@@ -177,20 +177,17 @@ class BagFIFO(object):
         self.relation = relation
         # The profit (or loss if negative), recorded in self.currency:
         self.profit = Decimal(0)
-        self.bags = []
-        # dictionary of {currency: total amount};
+        # dictionary of {exchange: list of bags}
+        self.bags = {}
+        # dictionary of {exchange: {currency: total amount}}:
+        # (also contains: {'in_transit': {currency: total amount}})
         self.totals = {}
-        # dictionary of {curreny: amount on hold},
-        # An amount is on hold e.g. if it is transfered from one
-        # exhange to another. A withrawel puts an amount on hold,
-        # a deposit removes the held amount:
-        self.on_hold = {}
-        # TODO: Another option (user selectable) would be to place an
-        # amount on hold directly in the bags, where the first bag in
-        # the chain is put on hold first. Then a transaction can
-        # be done with a bag which is further down in the chain, while
-        # the money in a prior bag is on hold - I am not sure if this
-        # is allowed tax wise though.
+        # dictionary of {currency: list of bags in transit};
+        # Bags are added here when currency is withdrawn from an
+        # exchange and removed again when they arrive (are deposited)
+        # at another exchange:
+        # (self.totals['in_transit'] is updated in parallel)
+        self.in_transit = {}
 
         self._last_date = pd.Timestamp(0, tz='UTC')
         self.num_created_bags = 0
@@ -236,7 +233,7 @@ class BagFIFO(object):
         """
         return json.dumps(
             {k: v for k, v in self.__dict__.items() if k != 'relation'},
-            default=_json_default, **kwargs)
+            default=_json_encode_default, **kwargs)
 
     def save(self, filepath_or_buffer):
         """Save the current state of this BagFIFO and its list of bags
@@ -255,7 +252,7 @@ class BagFIFO(object):
             json.dump(
                 {k: v for k, v in self.__dict__.items() if k != 'relation'},
                 fp=filepath_or_buffer,
-                default=_json_default, indent=4)
+                default=_json_encode_default, indent=4)
             if hasattr(filepath_or_buffer, 'name'):
                 log.info("Saved bags' state to %s", filepath_or_buffer.name)
         else:
@@ -278,23 +275,37 @@ class BagFIFO(object):
         if hasattr(filepath_or_buffer, 'read'):
             d = json.load(
                     fp=filepath_or_buffer,
-                    object_hook=_json_to_bagfifo_hook)
-            # remove zero totals and on_hold:
-            for td in [d['totals'], d['on_hold']]:
-                for key in list(td.keys()):
-                    if td[key] == 0:
-                        del td[key]
+                    object_hook=_json_decode_hook)
+            # remove zero totals:
+            for ex in d['totals']:
+                for cur, val in list(d['totals'][ex].items()):
+                    if val == 0:
+                        del d['totals'][ex][cur]
+                if not d['totals'][ex]:
+                    del d['totals'][ex]
+
             self.__dict__.update(d)
             if hasattr(filepath_or_buffer, 'name'):
                 log.info("Restored bags' state from %s",
                          filepath_or_buffer.name)
+
             # check consistency of totals:
             check_totals = {}
-            for bag in self.bags:
-                if bag.amount != 0:
-                    check_totals[bag.currency] = (
-                        check_totals.get(bag.currency, 0)
-                        + bag.amount)
+            for ex in self.bags:
+                check_totals[ex] = {}
+                for bag in self.bags[ex]:
+                    if bag.amount != 0:
+                        check_totals[ex][bag.currency] = (
+                            check_totals[ex].get(bag.currency, 0)
+                            + bag.amount)
+            check_transit = {}
+            for cur in self.in_transit:
+                for bag in self.in_transit[cur]:
+                    if bag.amount != 0:
+                        check_transit[cur] = (
+                            check_transit.get(cur, 0) + bag.amount)
+            if check_transit:
+                check_totals['in_transit'] = check_transit
             if check_totals != self.totals:
                 raise Exception(
                     "Could not load, file is corrupted "
@@ -304,22 +315,74 @@ class BagFIFO(object):
                 self.load(f)
 
     def to_data_frame(self):
-        d = [
-                ("id", [b.id for b in self.bags]),
-                ("date", [b.dtime for b in self.bags]),
-                ("amount", [b.amount for b in self.bags]),
-                ("currency", [b.currency for b in self.bags]),
-                ("cost", [b.cost for b in self.bags]),
-                ("costcur", [b.cost_currency for b in self.bags])
-            ]
-        return pd.DataFrame.from_items(d).set_index('id')
+        """Put all bags from all exchanges in one big pandas.DataFrame. """
+        l = [dict(list(bag.__dict__.items()) + [('exchange', ex)])
+                for ex, bgs in self.bags.items() for bag in bgs]
+        # Also add bags in transit:
+        l.extend([dict(
+                    list(bag.__dict__.items())
+                    + [('exchange', '<in_transit>')])
+                for bgs in self.in_transit.values() for bag in bgs])
+        cols = [
+            'id', 'exchange', 'dtime',
+            'currency', 'amount', 'cost_currency', 'cost', 'price']
+        return pd.DataFrame(l, columns=cols).set_index('id').rename_axis(
+                {'dtime': 'date', 'cost_currency': 'costcur'},
+                axis='columns')
 
     def __str__(self):
         return self.to_data_frame().to_string(
                 formatters={'amount': '{0:.8f}'.format,
-                            'cost': '{0:.8f}'.format})
+                            'cost': '{0:.8f}'.format,
+                            'price': '{0:.8f}'.format})
 
-    def buy_with_base_currency(self, dtime, amount, currency, cost):
+    def _move_bags(self, src, dest, amount, currency):
+        """Move *amount* of *currency* from one list of bags to another list
+        of bags.
+
+        Will split the last needed bag in *src* if only a part of its amount
+        needs to be moved, i.e. a new bag will be created in *dest* with the
+        amount taken out of that last bag in *src*.
+
+        :param src: List of Bag objects where bags totaling *amount* will be
+            removed from, starting from the first bag.
+        :param dest: List where Bag objects will be added to.
+        :param amount: amount to be moved.
+        :param currency: currency to be moved.
+        :return: amount that could not be moved because src is empty
+
+        """
+        # Find bags with this currency and move them completely
+        # or (the last one) partially:
+        i = 0
+        to_move = Decimal(amount)
+        while to_move > 0:
+            while src[i].currency != currency:
+                i += 1
+                if i == len(src):
+                    # No more usable bags left in src
+                    return to_move
+            bag = src[i]
+            if bag.amount <= to_move:
+                # Move complete bag:
+                dest.append(bag)
+                del src[i]
+                to_move -= bag.amount
+            else:
+                # We need to split the bag:
+                spent, cost, _ = bag.spend(to_move)
+                self.num_created_bags += 1
+                dest.append(Bag(
+                    id=self.num_created_bags,
+                    dtime=bag.dtime,
+                    currency=bag.currency,
+                    amount=spent,
+                    cost_currency=bag.cost_currency,
+                    cost=cost))
+                to_move -= spent
+        return to_move
+
+    def buy_with_base_currency(self, dtime, amount, currency, cost, exchange):
         """Create a new bag with *amount* money in *currency*.
 
         Creation time of the bag is the datetime *dtime*. The *cost* is
@@ -329,12 +392,15 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
+        exchange = str(exchange).capitalize()
         amount = Decimal(amount)
         if amount <= 0:
             return
         if currency == self.currency:
             self._abort('Buying the base currency is not possible.')
-        self.bags.append(Bag(
+        if exchange not in self.bags:
+            self.bags[exchange] = []
+        self.bags[exchange].append(Bag(
                 id=self.num_created_bags + 1,
                 dtime=dtime,
                 currency=currency,
@@ -342,10 +408,12 @@ class BagFIFO(object):
                 cost_currency=self.currency,
                 cost=cost))
         self.num_created_bags += 1
-        self.totals[currency] = (
-                self.totals.get(currency, Decimal()) + amount)
+        if exchange not in self.totals:
+            self.totals[exchange] = {}
+        tot = self.totals[exchange].get(currency, Decimal())
+        self.totals[exchange][currency] = tot + amount
 
-    def withdraw(self, dtime, currency, amount, fee):
+    def withdraw(self, dtime, currency, amount, fee, exchange):
         """Withdraw *amount* monetary units of *currency* from an
         exchange for a *fee* (also given in *currency*). The fee is
         included in amount. The withdrawal happened at datetime *dtime*.
@@ -355,19 +423,6 @@ class BagFIFO(object):
 
         If the amount is more than the total available, a ValueError
         will be raised.
-
-        ---
-
-        The amount (minus fee) will not be taken out of bags, but marked
-        as 'on-hold', which decreases the total amount of currency
-        available for trades. Call `deposit` to decrease the amount
-        'on hold'. A trade done while some money is still in transit
-        (i.e. withdrawn, but not deposited yet), will still be paid for
-        with money from the first bag (FIFO).
-
-        Note: This is done this way because I am not sure if the tax
-        agency would allow to park money by sending some to a wallet.
-        This should be made user-configurable in future.
 
         ---
 
@@ -410,29 +465,59 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
+        if amount <= 0: return
+        exchange = str(exchange).capitalize()
         if currency == self.currency:
             self._abort(
                     'Withdrawing the base currency is not possible.')
         amount = Decimal(amount)
         fee = Decimal(fee)
-        total = self.totals.get(currency, 0)
-        on_hold = self.on_hold.get(currency, 0)
-        if amount > total - on_hold:
+        if exchange not in self.totals:
+            total = 0
+        else:
+            total = self.totals[exchange].get(currency, 0)
+        if amount > total:
             self._abort(
-                "Withdrawn amount ({1} {0}) higher than total available "
-                "({2} {0}, of which {3} {0} are on hold already).".format(
-                        currency, amount, total, on_hold))
-
+                "Withdrawn amount ({1} {0}) is higher than total available "
+                "on {3}: {2} {0}.".format(
+                        currency, amount, total, exchange))
         # any fees?
         if fee > 0:
-            cost, _, _, _ = self.pay(dtime, currency, fee, is_fee=True)
+            cost, _, _, _ = self.pay(
+                dtime, currency, fee, exchange, is_fee=True)
             self.profit -= cost
             log.info("Taxable loss due to fees: %.3f %s",
                      -cost, self.currency)
 
-        self.on_hold[currency] = on_hold + amount - fee
+        # Move bags to self.in_transit:
+        if currency not in self.in_transit:
+            self.in_transit[currency] = []
+        remainder = self._move_bags(
+            self.bags[exchange], self.in_transit[currency],
+            amount - fee, currency)
+        if remainder:
+            # Corrupt data error: don't dump state.
+            raise Exception(
+                "There are no bags left with the requested currency")
+        # TODO: Add sending and/or receiving wallet adress (whichever
+        # available) to each transit? Then it may be unambigiously
+        # matched with the destination exchange in self.deposit.
 
-    def deposit(self, dtime, currency, amount, fee):
+        # update and clean up totals:
+        if total - amount == 0:
+            del self.totals[exchange][currency]
+            if not self.totals[exchange]:
+                del self.totals[exchange]
+            if not self.bags[exchange]:
+                del self.bags[exchange]
+        else:
+            self.totals[exchange][currency] = total - amount
+        if 'in_transit' not in self.totals:
+            self.totals['in_transit'] = {}
+        in_transit = self.totals['in_transit'].get(currency, 0)
+        self.totals['in_transit'][currency] = in_transit + amount - fee
+
+    def deposit(self, dtime, currency, amount, fee, exchange):
         """Deposit *amount* monetary units of *currency* into an
         exchange for a *fee* (also given in *currency*), making it
         available for trading. The fee is included in amount. The
@@ -445,41 +530,73 @@ class BagFIFO(object):
         fees), a warning will be printed and a bag created with a base
         cost of 0.
 
-        See also `withdraw` about the money placed 'on-hold' and about
-        the handling of fees.
+        See also `withdraw` about the handling of fees.
+
+        Note that, currently, the fees for this deposit, if any, will
+        be taken from the oldest funds on the exchange after the deposit,
+        which are not necessarily the deposited funds.
 
         """
         self._check_order(dtime)
+        if amount <= 0: return
+        exchange = str(exchange).capitalize()
         if currency == self.currency:
             self._abort(
-                    'Depositing the base currency is not possible.')
+                'Depositing the base currency is not possible.')
         amount = Decimal(amount)
         fee = Decimal(fee)
-        on_hold = self.on_hold.get(currency, 0)
-        if amount > on_hold:
-            diff = amount - on_hold
+
+        # Move bags to self.bags:
+        if exchange not in self.bags:
+            self.bags[exchange] = []
+        if currency in self.in_transit:
+            remainder = self._move_bags(
+                self.in_transit[currency], self.bags[exchange],
+                amount, currency)
+            # We always use oldest funds first, so in case there were
+            # some funds on the exchange newer than the deposited ones:
+            self.bags[exchange].sort(key=attrgetter('dtime'), reverse=False)
+        else:
+            remainder = amount
+
+        if remainder:
             log.warning(
                 "Depositing more money ({1} {0}) than "
                 "was withdrawn before ({2} {0}).".format(
-                        currency, amount, on_hold)
+                        currency, amount, amount - remainder)
                 + " Assuming the additional amount ({1} {0}) was bought "
-                "with 0 {2}.".format(currency, diff, self.currency))
-            if currency in self.on_hold:
-                del self.on_hold[currency]
-            self.buy_with_base_currency(dtime, diff, currency, 0)
-        else:
-            if on_hold - amount == 0:
-                del self.on_hold[currency]
-            else:
-                self.on_hold[currency] = on_hold - amount
+                "with 0 {2}.".format(currency, remainder, self.currency))
+            self.buy_with_base_currency(
+                dtime, remainder, currency, 0, exchange)
+
+        # update self.totals and clean up:
+        if 'in_transit' in self.totals:
+            if currency in self.totals['in_transit']:
+                self.totals['in_transit'][currency] -= amount
+                if self.totals['in_transit'][currency] <= 0:
+                    del self.totals['in_transit'][currency]
+            if not self.totals['in_transit']:
+                del self.totals['in_transit']
+            if not self.in_transit[currency]:
+                del self.in_transit[currency]
+
+        if exchange not in self.totals:
+            self.totals[exchange] = {}
+        tot = self.totals[exchange].get(currency, Decimal())
+        # remainder was added in self.buy_with_base_currency before:
+        self.totals[exchange][currency] = tot + amount - remainder
+
         # any fees?
+        # TODO: Must the fees be paid from deposited bags or from oldest
+        # bags on exchange (now it's done the latter way)?
         if fee > 0:
-            cost, _, _, _ = self.pay(dtime, currency, fee, is_fee=True)
+            cost, _, _, _ = self.pay(
+                    dtime, currency, fee, exchange, is_fee=True)
             self.profit -= cost
             log.info("Taxable loss due to fees: %.3f %s",
                      -cost, self.currency)
 
-    def pay(self, dtime, currency, amount, is_fee=False):
+    def pay(self, dtime, currency, amount, exchange, is_fee=False):
         """Pay *amount* with *currency*. The money is taken out of
         the first bag with the proper currency first. The bag's price
         is not changed, but it's current amount and base value are
@@ -513,17 +630,24 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
+        if amount <= 0: return
+        exchange = str(exchange).capitalize()
         if currency == self.currency:
             self._abort(
                 'Payments with the base currency are not relevant here.')
-        total = self.totals.get(currency, 0)
-        on_hold = self.on_hold.get(currency, 0)
-        amount = Decimal(amount)
-        if amount > total - on_hold:
+        if exchange not in self.bags or not self.bags[exchange]:
             self._abort(
-                "Amount to pay ({1} {0}) is higher than total available "
-                "({2} {0}). ({3} {0} is on hold)".format(
-                        currency, amount, total, on_hold))
+                "You don't own any funds on %s" % exchange)
+        if exchange not in self.totals:
+            total = 0
+        else:
+            total = self.totals[exchange].get(currency, 0)
+        amount = Decimal(amount)
+        if amount > total:
+            self._abort(
+                "Amount to be paid ({1} {0}) is higher than total "
+                "available on {3}: {2} {0}.".format(
+                        currency, amount, total, exchange))
         # expenses (original cost of spent money):
         cost = Decimal()
         # expenses only of short term trades:
@@ -544,19 +668,19 @@ class BagFIFO(object):
         # due payment:
         to_pay = amount
         log.info(
-                "Paying %.8f %s%s",
-                to_pay, currency, " (fees)" if is_fee else "")
+            "Paying %.8f %s%s from %s",
+            to_pay, currency, " (fees)" if is_fee else "", exchange)
         # Find bags with this currency and use them to pay for
         # this, starting from first bag (FIFO):
         i = 0
         while to_pay > 0:
-            while self.bags[i].currency != currency:
+            while self.bags[exchange][i].currency != currency:
                 i += 1
-                if i == len(self.bags):
+                if i == len(self.bags[exchange]):
                     # Corrupt data error: don't dump state.
                     raise Exception(
                         "There are no bags left with the requested currency")
-            bag = self.bags[i]
+            bag = self.bags[exchange][i]
 
             # Spend as much as possible from this bag:
             log.info("Paying%s with bag from %s, containing %.8f %s",
@@ -593,14 +717,19 @@ class BagFIFO(object):
                 log.info("Still to be paid with another bag: %.8f %s",
                      to_pay, currency)
             if bag.is_empty():
-                del self.bags[i]
+                del self.bags[exchange][i]
             else:
                 i += 1
 
+        # update and clean up totals:
         if total - amount == 0:
-            del self.totals[currency]
+            del self.totals[exchange][currency]
+            if not self.totals[exchange]:
+                del self.totals[exchange]
+            if not self.bags[exchange]:
+                del self.bags[exchange]
         else:
-            self.totals[currency] = total - amount
+            self.totals[exchange][currency] = total - amount
 
         return st_cost, st_rev, cost, rev
 
@@ -632,7 +761,8 @@ class BagFIFO(object):
                     dtime=trade.dtime,
                     amount=trade.buyval,
                     currency=trade.buycur,
-                    cost=trade.sellval)
+                    cost=trade.sellval,
+                    exchange=trade.exchange)
 
         elif not trade.sellcur or trade.sellval == 0:
             # Paid nothing, so it must be a deposit:
@@ -645,11 +775,12 @@ class BagFIFO(object):
                     'Fees with different currency than deposited '
                     'currency not supported.')
             self.deposit(
-                    trade.dtime, trade.buycur, trade.buyval, trade.feeval)
+                    trade.dtime, trade.buycur, trade.buyval, trade.feeval,
+                    trade.exchange)
 
         elif not trade.buycur or trade.buyval == 0:
             # Got nothing, so it must be a withdrawal:
-            log.info("Withrawing %.8f %s from %s (%s, fee: %.8f %s)",
+            log.info("Withdrawing %.8f %s from %s (%s, fee: %.8f %s)",
                 trade.sellval, trade.sellcur,
                 trade.exchange, trade.dtime,
                 trade.feeval, trade.feecur)
@@ -658,7 +789,8 @@ class BagFIFO(object):
                     'Fees with different currency than withdrawn '
                     'currency not supported.')
             self.withdraw(
-                    trade.dtime, trade.sellcur, trade.sellval, trade.feeval)
+                    trade.dtime, trade.sellcur, trade.sellval, trade.feeval,
+                    trade.exchange)
 
         else:
             # We paid with a currency which must be in some bag and
@@ -688,7 +820,8 @@ class BagFIFO(object):
 
             # Pay the sold money (including fees):
             st_cost, st_proceeds, _, tot_proceeds = self.pay(
-                    trade.dtime, trade.sellcur, trade.sellval)
+                    trade.dtime, trade.sellcur, trade.sellval,
+                    trade.exchange)
             # The cost and proceeds attributable to fees are split
             # proportionately from st_cost and st_proceeds, i.e.
             # the fee's cost is `fee_p * st_cost` and the lost proceeds
@@ -711,4 +844,5 @@ class BagFIFO(object):
                 # minus the fee's proportion to buy the new currency:
                 self.buy_with_base_currency(
                     trade.dtime, trade.buyval, trade.buycur,
-                    cost=tot_proceeds * (1 - fee_p))
+                    cost=tot_proceeds * (1 - fee_p),
+                    exchange=trade.exchange)

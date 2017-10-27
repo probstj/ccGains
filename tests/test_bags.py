@@ -156,9 +156,12 @@ class TestBagFIFO(unittest.TestCase):
             currlist=['BTC', 'XMR', 'EUR'],
             feelist=[(0, ''), (0, ''), (0, '')])
 
-        for tot in bagfifo.totals.values():
-            self.assertEqual(tot, 0)
+        # check correct profit:
         self.assertEqual(proceeds - budget, bagfifo.profit)
+        # check that bagfifo is empty and cleaned up:
+        self.assertFalse(bagfifo.totals)
+        self.assertFalse(bagfifo.bags)
+        self.assertFalse(bagfifo.in_transit)
 
     def test_trading_profits_with_fees(self):
         # Add handler to the logger (uncomment this to enable output)
@@ -186,9 +189,12 @@ class TestBagFIFO(unittest.TestCase):
                         currlist=currlist,
                         feelist=feelist)
 
-                    for tot in bagfifo.totals.values():
-                        self.assertEqual(tot, 0)
+                    # check correct profit:
                     self.assertEqual(proceeds - budget, bagfifo.profit)
+                    # check that bagfifo is empty and cleaned up:
+                    self.assertFalse(bagfifo.totals)
+                    self.assertFalse(bagfifo.bags)
+                    self.assertFalse(bagfifo.in_transit)
 
     def test_bag_cost_after_trading_with_fees(self):
         # Add handler to the logger (uncomment this to enable output)
@@ -213,7 +219,7 @@ class TestBagFIFO(unittest.TestCase):
                     feelist=[(0, ''), (fee, fee_cur)])
 
                 self.assertEqual(
-                        bagfifo.bags[-1].cost, budget + bagfifo.profit)
+                    bagfifo.bags[''][-1].cost, budget + bagfifo.profit)
 
     def test_saving_loading(self):
         # Add handler to the logger (uncomment this to enable output)
@@ -221,21 +227,25 @@ class TestBagFIFO(unittest.TestCase):
 
         bagfifo = bags.BagFIFO('EUR', self.rel)
 
-        # Make up some trades:
+        # Make up some transactions:
         budget = 1000
         day1 = self.rng[0]
         day2 = self.rng[2]
         day3 = self.rng[4]
         btc = self.rel.get_rate(day1, 'EUR', 'BTC') * budget
         t1 = trades.Trade('Buy', day1, 'BTC', btc, 'EUR', budget)
+        # also include withdrawal and deposit:
+        t2 = trades.Trade('Withdraw', day1, '', 0, 'BTC', btc / 3)
+        t3 = trades.Trade('Deposit', day2, 'BTC', btc / 3, '', 0)
         xmr = self.rel.get_rate(day2, 'BTC', 'XMR') * btc
-        t2 = trades.Trade(
+        t4 = trades.Trade(
                 'Trade', day2, 'XMR', xmr, 'BTC', btc, 'XMR', '0')
         proceeds = self.rel.get_rate(day3, 'XMR', 'EUR') * xmr
-        t3 = trades.Trade(
+        t5 = trades.Trade(
                 'Trade', day3, 'EUR', proceeds, 'XMR', xmr, '', '0')
 
-        # only process first two trades:
+        # Only process first two transactions, so we have a bag in
+        # bagfifo.bags and one in bagfifo.in_transit to save:
         for t in [t1, t2]:
             bagfifo.process_trade(t)
             self.log_bags(bagfifo)
@@ -250,19 +260,29 @@ class TestBagFIFO(unittest.TestCase):
         outfile.seek(0)
         bf2.load(outfile)
 
-        # skip bf2.bags, since the bags are new objects:
+        # skip bf2.bags and bf2.in_transit, since the bags are new objects:
+        excl = ['bags', 'in_transit']
         self.assertDictEqual(
-            {k:v for k, v in bagfifo.__dict__.items() if k != 'bags'},
-            {k:v for k, v in bf2.__dict__.items() if k != 'bags'})
+            {k:v for k, v in bagfifo.__dict__.items() if k not in excl},
+            {k:v for k, v in bf2.__dict__.items() if k not in excl})
         # But the bags' contents must be equal:
-        for i, b in enumerate(bagfifo.bags):
-            self.assertDictEqual(b.__dict__, bf2.bags[i].__dict__)
+        for ex in bagfifo.bags:
+            for i, b in enumerate(bagfifo.bags[ex]):
+                self.assertDictEqual(b.__dict__, bf2.bags[ex][i].__dict__)
+        for cur in bagfifo.in_transit:
+            for i, b in enumerate(bagfifo.in_transit[cur]):
+                self.assertDictEqual(
+                    b.__dict__, bf2.in_transit[cur][i].__dict__)
 
-        # process another trade:
-        bagfifo.process_trade(t3)
-        bf2.process_trade(t3)
+        # process the rest of the transactions:
+        for t in [t3, t4, t5]:
+            bagfifo.process_trade(t)
+            bf2.process_trade(t)
+            self.log_bags(bagfifo)
+            self.logger.info("Profit so far: %.2f %s\n",
+                             bagfifo.profit, bagfifo.currency)
 
-        # equal, because now, bags list should be empty:
+        # equal, because now, bags lists should be empty:
         self.assertDictEqual(bagfifo.__dict__, bf2.__dict__)
 
 
