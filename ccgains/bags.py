@@ -764,19 +764,16 @@ class BagFIFO(object):
                     cost=trade.sellval,
                     exchange=trade.exchange)
 
-        elif not trade.sellcur or trade.sellval == 0:
-            # Paid nothing, so it must be a deposit:
-            log.info("Depositing %.8f %s at %s (%s, fee: %.8f %s)",
-                trade.buyval, trade.buycur,
-                trade.exchange, trade.dtime,
-                trade.feeval, trade.feecur)
-            if trade.feeval > 0 and trade.buycur != trade.feecur:
-                self._abort(
-                    'Fees with different currency than deposited '
-                    'currency not supported.')
-            self.deposit(
-                    trade.dtime, trade.buycur, trade.buyval, trade.feeval,
-                    trade.exchange)
+        elif ((not trade.buycur or trade.buyval == 0) and
+              (not trade.sellcur or trade.sellval == 0)):
+            # Probably some fees to pay:
+            if trade.feeval > 0 and trade.feecur:
+                cost, _, _, _ = self.pay(
+                    trade.dtime, trade.feecur, trade.feeval, trade.exchange,
+                    is_fee=True)
+                self.profit -= cost
+                log.info("Taxable loss due to fees: %.3f %s",
+                         -cost, self.currency)
 
         elif not trade.buycur or trade.buyval == 0:
             # Got nothing, so it must be a withdrawal:
@@ -790,6 +787,20 @@ class BagFIFO(object):
                     'currency not supported.')
             self.withdraw(
                     trade.dtime, trade.sellcur, trade.sellval, trade.feeval,
+                    trade.exchange)
+
+        elif not trade.sellcur or trade.sellval == 0:
+            # Paid nothing, so it must be a deposit:
+            log.info("Depositing %.8f %s at %s (%s, fee: %.8f %s)",
+                trade.buyval, trade.buycur,
+                trade.exchange, trade.dtime,
+                trade.feeval, trade.feecur)
+            if trade.feeval > 0 and trade.buycur != trade.feecur:
+                self._abort(
+                    'Fees with different currency than deposited '
+                    'currency not supported.')
+            self.deposit(
+                    trade.dtime, trade.buycur, trade.buyval, trade.feeval,
                     trade.exchange)
 
         else:

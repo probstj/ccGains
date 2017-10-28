@@ -141,6 +141,9 @@ def _parse_trades(str_list, param_dict, default_timezone):
 
 
 class Trade(object):
+    """This class holds details about a single transaction, like a trade
+    between two currencies or a withdrawal of a single currency.
+    """
 
     def __init__(
             self, ttype, dtime, buy_currency, buy_amount,
@@ -230,13 +233,13 @@ class Trade(object):
 
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
-        for i, val in enumerate([
+        for val in [
                 self.typ, self.dtime,
                 self.buycur, self.buyval,
                 self.sellcur, self.sellval,
                 self.feecur, self.feeval,
                 self.exchange, self.mark,
-                self.comment]):
+                self.comment]:
             if isinstance(val, Decimal):
                 strings.append("{0:0.8f}".format(float(val)))
             else:
@@ -474,8 +477,8 @@ class TradeHistory(object):
             according to the locale setting; or it must be a tzinfo
             subclass (from dateutil.tz or pytz);
             The default is None, i.e. the local timezone,
-            which is what Bitsquare exports at time of writing, but it
-            might change in future.
+            which is what Bitsquare exports at time of writing this,
+            but it might change in future.
 
         """
         if default_timezone is None:
@@ -507,31 +510,56 @@ class TradeHistory(object):
         tdl.sort(key=attrgetter('dtime'), reverse=False)
         txl.sort(key=attrgetter('dtime'), reverse=False)
 
-        # For each trade from tdl, pop the accompanying data from
+        # For each trade from tdl, find the accompanying data from
         # transactions list txl:
         txlpos = 0
         for trade in tdl:
             found = []
             # the trade id:
             tid = trade.comment
-            # find matching transactions, which will have tid in ttype:
-            while txlpos < len(txl):
+            # find 3 matching transactions, whose typ will contain tid:
+            # (The multisig deposit and payout will be placed in `found`)
+            while txlpos < len(txl) and len(found) < 2:
                 tx = txl[txlpos]
-                if tid in tx.typ:
-                    found.append(txl.pop(txlpos))
-                else:
-                    txlpos += 1
-            # Use the data in `found` to add fee to trade:
-            trade.feeval += trade.buyval - reduce(
-                    lambda sm, tx: sm + tx.buyval - tx.sellval,
-                    found, Decimal())
-            # The transactions in `found` can now be discarded
+                if 'Create offer fee' in tx.typ:
+                    if tid in tx.typ:
+                        # This trade's sell value is actually a fee:
+                        tx.feecur, tx.feeval = tx.sellcur, tx.sellval
+                        tx.sellval = 0
+                    else:
+                        # This is a fee for an offer that was never taken,
+                        # which is a loss and not tax deductable, mark
+                        # it as such:
+                        # (Maybe bisq does it already? I haven't got a clue)
+                        tx.typ = tx.typ.replace(
+                                    'Create', 'Canceled') + ' (Loss)'
+                elif tid in tx.typ:
+                    # Hold the matching multisig deposit and payout:
+                    found.append(tx)
+                txlpos += 1
+            # Substract the sum of amounts in `found` from trade.buyval,
+            # which is the multisig deposit fee:
+            fee = (trade.buyval
+                   - found[0].buyval + found[0].sellval
+                   - found[1].buyval + found[1].sellval)
+            found[0].feeval = fee
+            found[0].feecur = found[0].sellcur
+            # Also, the multisig payout is the sum of the multisig
+            # deposit and the purchased coins. But the latter is already
+            # taken into account in the trade, so remove it from the
+            # payout:
+            found[1].buyval -= trade.buyval
 
-        # TODO: Also filter some transactions, which might be due to
-        # failed transactions, or fees for created offers that were
-        # never taken. Those fees are not tax deductable, so they must
-        # be marked with ttype 'Loss'; and then we'd also need to
-        # introduce proper handling of losses in bags.BagFIFO...
+        # No more trades. Find remaining canceled offer fees if any:
+        while txlpos < len(txl):
+            tx = txl[txlpos]
+            if 'Create offer fee' in tx.typ:
+                # This is a fee for an offer that was never taken,
+                # which is a loss and not tax deductable, mark
+                # it as such:
+                # (Maybe bisq does it already? I haven't got a clue)
+                tx.typ = tx.typ.replace('Create', 'Canceled') + ' (Loss)'
+            txlpos += 1
 
         # Add both lists to self.tlist:
         numtrades = len(self.tlist)
