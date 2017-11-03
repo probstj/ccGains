@@ -27,6 +27,7 @@
 from decimal import Decimal
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from datetime import datetime
 import json
 from os import path
 from operator import attrgetter
@@ -58,7 +59,7 @@ def _json_encode_default(obj):
         return {'type(Decimal)': str(obj)}
     elif isinstance(obj, Bag):
         return {'type(Bag)': obj.__dict__}
-    elif isinstance(obj, pd.Timestamp):
+    elif isinstance(obj, datetime):
         return {'type(datetime)': str(obj)}
     else:
         raise TypeError(repr(obj) + " is not JSON serializable")
@@ -118,12 +119,12 @@ class Bag(object):
         """Spend some amount out of this bag. This updates the current
         amount and the base value, but leaves the price constant.
 
-        :returns: the tuple (spent_amount, bvalue, remainder),
+        :returns: the tuple (spent_amount, bcost, remainder),
             where
                 - *spent_amount* is the amount taken out of the bag, in
-                  units of self.currency;
-                - *bvalue* is the base value of the spent amount, in
-                  units of self.cost_currency;
+                  units of `self.currency`;
+                - *bcost* is the base cost of the spent amount, in
+                  units of `self.cost_currency`;
                 - *remainder* is the leftover of *amount* after the
                   spent amount is substracted.
 
@@ -188,6 +189,18 @@ class BagFIFO(object):
         # at another exchange:
         # (self.totals['in_transit'] is updated in parallel)
         self.in_transit = {}
+
+        # Data for capital gains report:
+        # (A list of ['type', 'amount', 'currency', 'purchase_date',
+        #             'sell_date', 'exchange', 'is_short_term', 'cost',
+        #             'proceeds', 'profit']-lists.)
+        # 'type' is e.g.: 'sale', 'transfer fee', 'withdrawal fee'
+        # TODO: In future, this should be moved into an external helper
+        # module 'reports', which handles all reports (capital gain,
+        # bags used etc.) and provides methods to export to csv, pdf
+        # etc., including i18n support (translations), maybe even with
+        # plotting and statistical functions.
+        self.report_data = []
 
         self._last_date = pd.Timestamp(0, tz='UTC')
         self.num_created_bags = 0
@@ -336,6 +349,38 @@ class BagFIFO(object):
                             'cost': '{0:.8f}'.format,
                             'price': '{0:.8f}'.format})
 
+    def get_report_data(self):
+        """Return a pandas.DataFrame listing the capital gains, made
+        with the processed trades.
+
+        The returned DataFrame will contain the columns:
+        ['type', 'amount', 'currency', 'purchase_date', 'sell_date',
+         'exchange', 'is_short_term', 'cost', 'proceeds', 'profit'].
+
+        """
+        return pd.DataFrame(
+            self.report_data,
+            columns=['type', 'amount', 'currency', 'purchase_date',
+                     'sell_date', 'exchange', 'is_short_term', 'cost',
+                     'proceeds', 'profit'])
+
+    def save_report_to_csv(
+            self, path_or_buf=None, **kwargs):
+        """Write the capital gains table to a csv file.
+
+        :param path_or_buf: string or file handle, default None
+            File path or object, if None is provided the result
+            is returned as a string.
+
+        """
+        df = self.get_report_data()
+        return df.to_csv(
+                path_or_buf,
+                float_format='%.8f',
+                index=False,
+                **kwargs)
+
+
     def _move_bags(self, src, dest, amount, currency):
         """Move *amount* of *currency* from one list of bags to another list
         of bags.
@@ -483,11 +528,11 @@ class BagFIFO(object):
                         currency, amount, total, exchange))
         # any fees?
         if fee > 0:
-            cost, _, _, _ = self.pay(
-                dtime, currency, fee, exchange, is_fee=True)
-            self.profit -= cost
+            prof, _ = self.pay(
+                dtime, currency, fee, exchange, fee_ratio=1)
+            self.profit += prof
             log.info("Taxable loss due to fees: %.3f %s",
-                     -cost, self.currency)
+                     prof, self.currency)
 
         # Move bags to self.in_transit:
         if currency not in self.in_transit:
@@ -590,46 +635,58 @@ class BagFIFO(object):
         # TODO: Must the fees be paid from deposited bags or from oldest
         # bags on exchange (now it's done the latter way)?
         if fee > 0:
-            cost, _, _, _ = self.pay(
-                    dtime, currency, fee, exchange, is_fee=True)
-            self.profit -= cost
+            prof, _ = self.pay(
+                    dtime, currency, fee, exchange, fee_ratio=1)
+            self.profit += prof
             log.info("Taxable loss due to fees: %.3f %s",
-                     -cost, self.currency)
+                     prof, self.currency)
 
-    def pay(self, dtime, currency, amount, exchange, is_fee=False):
-        """Pay *amount* with *currency*. The money is taken out of
-        the first bag with the proper currency first. The bag's price
-        is not changed, but it's current amount and base value are
-        decreased. *dtime*, a datetime, is the time of payment.
+    def pay(self, dtime, currency, amount, exchange, fee_ratio=0):
+        """Spend an amount of funds.
 
-        Set *is_fee* to tell if this payment is just for fees or not.
-        This only changes the logging output, nothing else. The returned
-        tuple is the same in both cases; whether fees are a taxable loss
-        or not must thus be decided by the caller.
+        The money is taken out of the oldest bag on the exchange with
+        the proper currency first, then from the next fitting bags in
+        line each time a bag is emptied (FIFO principle). The bags'
+        prices are not changed, but their current amount and base value
+        (original cost) are decreased proportionally.
 
-        If the amount is higher than available total amount, ValueError
-        is raised.
+        This transaction and any profits or losses made will be logged
+        and added to self.report_data.
 
-        :returns: the tuple
-            `(st_expenses, st_revenue, tot_expenses, tot_revenue)`, all
-            in units of the base currency, where:
-            - *st_expenses*, short term expenses, is the original amount
-            paid for the amount taken out of bags which were acquired in
-            the short term regarding *dtime*,
-            - *st_revenue*, short term revenue, is the worth of this
-            amount on time of payment; Only includes bags whose
-            expenses are also included in `st_expenses`,
-            - *tot_expenses* and *tot_revenue* are the total expenses
-            paid for all amounts taken out of bags and the total value
-            at time of payment, respectively, regardless of acquisition
-            date.
+        If *amount* is higher than the available total amount,
+        ValueError is raised.
 
-            The taxable profit for countries which only tax trades made
-            in the short term would then be
-            `taxprofit = st_revenue - st_expenses`.
+        :param dtime (datetime): The date and time when the payment
+            occured.
+        :param amount (number, decimal or parsable string):
+            The amount being spent, including fees.
+        :param currency (string): The currency being spent.
+        :param exchange (string): The unique name of the
+            exchange/wallet where the funds that are being spent are
+            taken from.
+        :param fee_ratio (number, decimal or parsable string),
+            0 <= fee_ratio <= 1: The ratio of *amount* that are fees.
+            Default: 0.
+        :returns: the tuple `(short_term_profit, total_proceeds)`,
+            with each value given in units of the base currency, where:
+            - `short_term_profit` is the taxable short term profit (or
+            loss if negative) made in this sale. This only takes into
+            account the part of *amount* which was acquired less than
+            a year prior to *dtime* (or whatever time period is used by
+            `is_short_term`). The short term profit equals the proceeds
+            made by liquidating this amount for its price at *dtime*
+            minus its original cost, with the fees already substracted
+            from these proceeds.
+            - `total_proceeds` are the total proceeds returned from this
+            sale, i.e. it includes the full *amount* (held for any amount
+            of time) at its price at *dtime*, with fees already
+            substracted. This value equals the base cost of any new
+            currency purchased with this sale.
 
         """
         self._check_order(dtime)
+        amount = Decimal(amount)
+        fee_ratio = Decimal(fee_ratio)
         if amount <= 0: return
         exchange = str(exchange).capitalize()
         if currency == self.currency:
@@ -638,11 +695,12 @@ class BagFIFO(object):
         if exchange not in self.bags or not self.bags[exchange]:
             self._abort(
                 "You don't own any funds on %s" % exchange)
+        if fee_ratio < 0 or fee_ratio > 1:
+            self._abort("Fee ratio must be between 0 and 1.")
         if exchange not in self.totals:
             total = 0
         else:
             total = self.totals[exchange].get(currency, 0)
-        amount = Decimal(amount)
         if amount > total:
             self._abort(
                 "Amount to be paid ({1} {0}) is higher than total "
@@ -652,10 +710,10 @@ class BagFIFO(object):
         cost = Decimal()
         # expenses only of short term trades:
         st_cost = Decimal()
-        # revenue (value of spent money at dtime):
-        rev = Decimal()
-        # revenue only of short term trades:
-        st_rev = Decimal()
+        # proceeds (value of spent money at dtime):
+        proc = Decimal()
+        # proceeds only of short term trades:
+        st_proc = Decimal()
         # exchange rate at time of payment:
         try:
             rate = Decimal(
@@ -668,12 +726,15 @@ class BagFIFO(object):
         # due payment:
         to_pay = amount
         log.info(
-            "Paying %.8f %s%s from %s",
-            to_pay, currency, " (fees)" if is_fee else "", exchange)
+            "Paying %(to_pay).8f %(curr)s from %(exchange)s "
+            "(including %(fees).8f %(curr)s fees)",
+            {'to_pay': to_pay, 'curr': currency,
+             'exchange': exchange, 'fees': to_pay * fee_ratio})
         # Find bags with this currency and use them to pay for
         # this, starting from first bag (FIFO):
         i = 0
         while to_pay > 0:
+            # next bag in line with fitting currency:
             while self.bags[exchange][i].currency != currency:
                 i += 1
                 if i == len(self.bags[exchange]):
@@ -683,34 +744,48 @@ class BagFIFO(object):
             bag = self.bags[exchange][i]
 
             # Spend as much as possible from this bag:
-            log.info("Paying%s with bag from %s, containing %.8f %s",
-                     " fee" if is_fee else "",
+            log.info("Paying with bag from %s, containing %.8f %s",
                      bag.dtime, bag.amount, bag.currency)
-            spent, bvalue, remainder = bag.spend(to_pay)
+            spent, bcost, remainder = bag.spend(to_pay)
             log.info("Contents of bag after payment: %.8f %s (spent %.8f %s)",
                  bag.amount, bag.currency, spent, currency)
 
-            # The revenue is the value of spent amount at dtime:
-            thisrev = spent * rate
-            rev += thisrev
-            cost += bvalue
+            # The proceeds are the value of spent amount at dtime:
+            thisproc = spent * rate
+            # update totals for the full payment:
+            proc += thisproc
+            cost += bcost
             short_term = is_short_term(bag.dtime, dtime)
             if short_term:
-                st_rev += thisrev
-                st_cost += bvalue
+                st_proc += thisproc
+                st_cost += bcost
 
-            if not is_fee:
-                log.info("Profits in this transaction:\n"
-                     "    Original bag cost: %.2f %s (Price %.8f %s/%s)\n"
-                     "    Proceeds         : %.2f %s (Price %.8f %s/%s)\n"
-                     "    Profit/loss      : %.2f %s\n"
-                     "    Taxable?         : %s (held for %s than a year)",
-                     bvalue, self.currency, bag.price, bag.cost_currency,
-                     currency,
-                     thisrev, self.currency, rate, self.currency, currency,
-                     (thisrev - bvalue), self.currency,
-                     'yes' if short_term else 'no',
-                     'less' if short_term else 'more')
+            # fee-corrected proceeds for this partial sale:
+            corrproc = thisproc * (1 - fee_ratio)
+            # profit for this partial sale (not short term only):
+            prof = corrproc - bcost
+
+            log.info("Profits in this transaction:\n"
+                 "    Original bag cost: %.3f %s (Price %.8f %s/%s)\n"
+                 "    Proceeds         : %.3f %s (Price %.8f %s/%s)\n"
+                 "    Proceeds w/o fees: %.3f %s\n"
+                 "    Profit           : %.3f %s\n"
+                 "    Taxable?         : %s (held for %s than a year)",
+                 bcost, self.currency, bag.price, bag.cost_currency,
+                 currency,
+                 thisproc, self.currency, rate, self.currency, currency,
+                 corrproc, self.currency,
+                 prof, self.currency,
+                 'yes' if short_term else 'no',
+                 'less' if short_term else 'more')
+
+            # append ['type', 'amount', 'currency', 'purchase_date',
+            #         'sell_date', 'exchange', 'is_short_term', 'cost',
+            #         'proceeds', 'profit']:
+            self.report_data.append(
+                ['fee' if fee_ratio == 1 else 'sale',
+                 spent, currency, bag.dtime, dtime, exchange,
+                 short_term, bcost, corrproc, prof])
 
             to_pay = remainder
             if to_pay > 0:
@@ -731,7 +806,24 @@ class BagFIFO(object):
         else:
             self.totals[exchange][currency] = total - amount
 
-        return st_cost, st_rev, cost, rev
+        # Return the tuple (short_term_profit, total_proceeds):
+        # Note: if it is not completely clear how we arrive at these
+        # formulas (i.e. the proceeds are the value of the spent amount,
+        # minus fees, at time of payment; the profit equals these
+        # proceeds minus the initial cost of the full amount), here
+        # is a different view point:
+        # The cost and proceeds attributable to fees are split
+        # proportionately from st_cost and st_proceeds, i.e.
+        # the fee's cost is `fee_p * st_cost` and the lost proceeds
+        # due to the fee is `fee_p * st_proceeds`.
+        # The fee's cost is counted as loss:
+        # (but only the taxable short term portion!)
+        # ==>
+        # Total profit =
+        #  profit putting fees aside: (1-fee_p) * (st_proceeds - st_cost)
+        #  - fee cost loss          : - fee_p * st_cost
+        #  = (1 - fee_p) * st_proceeds - st_cost
+        return st_proc * (1 - fee_ratio) - st_cost, proc * (1 - fee_ratio)
 
     def process_trade(self, trade):
         """Process the trade or transaction documented in a Trade object.
@@ -768,14 +860,19 @@ class BagFIFO(object):
               (not trade.sellcur or trade.sellval == 0)):
             # Probably some fees to pay:
             if trade.feeval > 0 and trade.feecur:
-                cost, _, _, _ = self.pay(
+                prof, _, = self.pay(
                     trade.dtime, trade.feecur, trade.feeval, trade.exchange,
-                    is_fee=True)
-                self.profit -= cost
+                    fee_ratio=1)
+                self.profit += prof
                 log.info("Taxable loss due to fees: %.3f %s",
-                         -cost, self.currency)
+                         prof, self.currency)
 
-        elif not trade.buycur or trade.buyval == 0:
+        elif not trade.buycur or (trade.buyval == 0
+            # In Poloniex' csv data, there is sometimes a trade listed
+            # with a nonzero sellval but with 0 buyval, because the
+            # latter amounts to less than 5e-9, which gets rounded down.
+            # But it is not a withdrawal, so exclude it here:
+                and trade.typ != 'Exchange'):
             # Got nothing, so it must be a withdrawal:
             log.info("Withdrawing %.8f %s from %s (%s, fee: %.8f %s)",
                 trade.sellval, trade.sellcur,
@@ -807,7 +904,7 @@ class BagFIFO(object):
             # We paid with a currency which must be in some bag and
             # bought another currency with it. This is where we make
             # a profit or a loss, which is the difference between the
-            # revenue we get for selling our held currency minus the
+            # proceeds we get for selling our held currency minus the
             # expenses we had to initially buy it.
 
             log.info("Selling %.8f %s for %.8f %s at %s (%s, fee: %.8f %s)",
@@ -830,30 +927,16 @@ class BagFIFO(object):
                 fee_p = Decimal()
 
             # Pay the sold money (including fees):
-            st_cost, st_proceeds, _, tot_proceeds = self.pay(
-                    trade.dtime, trade.sellcur, trade.sellval,
-                    trade.exchange)
-            # The cost and proceeds attributable to fees are split
-            # proportionately from st_cost and st_proceeds, i.e.
-            # the fee's cost is `fee_p * st_cost` and the lost proceeds
-            # due to the fee is `fee_p * st_proceeds`.
-            # The fee's cost is counted as loss:
-            # (but only the taxable short term portion!)
-            # Total profit =
-            #  profit ignoring fees: (1-fee_p) * (st_proceeds - st_cost)
-            #  - fee cost loss     : - fee_p * st_cost
-            #  = (1 - fee_p) * st_proceeds - st_cost
-            self.profit += (1 - fee_p) * st_proceeds - st_cost
-            if trade.feeval > 0:
-                log.info("Substract from the total profit made in this "
-                     "last trade an amount of %.2f %s for the paid fees.",
-                     fee_p * st_proceeds, self.currency)
+            prof, proc = self.pay(
+                trade.dtime, trade.sellcur, trade.sellval,
+                trade.exchange, fee_ratio=fee_p)
+            self.profit += prof
 
             # Did we trade for another foreign/cryptocurrency?
             if trade.buycur != self.currency:
                 # We use the total proceeds from our most recent selling
-                # minus the fee's proportion to buy the new currency:
+                # excluding the fee's proportion to buy the new currency:
                 self.buy_with_base_currency(
                     trade.dtime, trade.buyval, trade.buycur,
-                    cost=tot_proceeds * (1 - fee_p),
+                    cost=proc,
                     exchange=trade.exchange)
