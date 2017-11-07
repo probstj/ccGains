@@ -46,10 +46,11 @@ log = logging.getLogger(__name__)
 # ["ttype", "dtime", "buy_currency", "buy_amount", "sell_currency",
 # "sell_amount", "fee_currency", "fee_amount",
 # "exchange", "mark", "comment"]
-# (Note that buy and sell values may be given in reverse order if one
+# (Note that buy and sell values may be swapped if one
 # of them is negative)
 
 # Trade parameters in csv from Poloniex.com:
+# ('comment' is the Poloniex order number)
 TPLOC_POLONIEX_TRADES = {
     'ttype': 2, 'dtime': 0,
     'buy_currency': lambda cols: cols[1].split('/')[0],
@@ -60,7 +61,7 @@ TPLOC_POLONIEX_TRADES = {
     'fee_amount': lambda cols:
         Decimal(cols[[5, 6][cols[3]=='Sell']])
         - Decimal(cols[[10, 9][cols[3]=='Sell']]),
-    'exchange': 'Poloniex', 'mark': 3, 'comment': -1}
+    'exchange': 'Poloniex', 'mark': 3, 'comment': 8}
 # 'comment' is the wallet address withdrawn to:
 TPLOC_POLONIEX_WITHDRAWALS = [
     "Withdrawal", 0, '', '0', 1, 2, -1, -1, "Poloniex", -1, 3]
@@ -90,7 +91,7 @@ TPLOC_BISQ_TRANSACTIONS = [
         1, 0, 'BTC', 4, '', '0', -1, -1, "Bitsquare/Bisq", '', 2]
 
 
-def _parse_trades(str_list, param_dict, default_timezone):
+def _parse_trade(str_list, param_dict, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
     to *param_locs*.
 
@@ -289,33 +290,48 @@ class TradeHistory(object):
         following each withdrawal and compares the withdrawn amount
         with the deposited amount. The difference (withdrawn - deposited)
         is then assigned as the fee for the withdrawal, if this fee
-        is greater than zero. This will not work if there are
+        is greater than zero. This might not work if there are
         withdrawals in tight succession whose deposits register in a
         different order than the withdrawals.
 
-        If *raise_on_error* is True (which is the default), a Valueerror
+        If *raise_on_error* is True (which is the default), a ValueError
         will be raised if a pair is found that cannot possibly match
         (higher deposit than withdrawal), otherwise only a warning
-        is logged and the withdrawal ignored while the deposit is
-        matched to the next withdrawal.
+        is logged and the withdrawal skipped (which will be tried to be
+        matched with the next deposit) while the deposit is tried
+        to be matched with another withdrawal that came before it.
 
         """
-        # Filter out all deposits and withdrawals from self.tlist.
-        # Make a list of tuples:
+        # Filter out all deposits and withdrawals from self.tlist
+        # by making a list of tuples:
         #   (tlist index,
         #    'w' or 'd' for 'withdrawal' OR 'deposit', respectively,
         #    withdrawal amount - fees OR deposit amount, respectively):
+        # (Note: We are keeping both in one list to keep their order)
         translist = []
         for i, t in enumerate(self.tlist):
-            if t.buyval == 0 and t.sellval > 0:
-                # This should be a withdrawal
-                if t.feeval and t.sellcur != t.feecur:
-                    raise ValueError(
-                        'In trade %i, encountered withdrawal with different '
-                        'fee currency than withdrawn currency.')
-                translist.append((i, 'w', t.sellval - t.feeval))
-            elif t.sellval == 0 and t.buyval > 0:
-                # This should be a deposit
+            if t.exchange == 'Bitsquare/Bisq' and t.typ.startswith('MultiSig'):
+                # The Bitsquare/Bisq MultiSig deposits and payouts are
+                # already taken care of and their fees properly added
+                # when importing from csv in self.append_bisq_csv, so
+                # skip them here:
+                continue
+            elif t.sellval > 0 and (not t.buycur or (not t.buyval
+                # In Poloniex' csv data, there is sometimes a trade listed
+                # with a non-zero sellval but with 0 buyval, because the
+                # latter amounts to less than 5e-9, which is rounded down.
+                # But it is not a withdrawal, so exclude it here:
+                and (t.exchange != 'Poloniex'
+                     or t.typ == 'Withdrawal'))):
+                    # This seems to be a withdrawal
+                    if t.feeval and t.sellcur != t.feecur:
+                        raise ValueError(
+                            'In trade %i, encountered withdrawal with '
+                            'different fee currency than withdrawn '
+                            'currency.' % i)
+                    translist.append((i, 'w', t.sellval - t.feeval))
+            elif t.buyval > 0 and (not t.sellval or not t.sellcur):
+                # This seems to be a deposit
                 translist.append((i, 'd', t.buyval))
         unhandled_withdrawals = []
         num_unmatched = 0
@@ -327,28 +343,36 @@ class TradeHistory(object):
                 num_feeless += self[i].feeval == 0
             else:
                 # deposit
-                while len(unhandled_withdrawals) > 0:
-                    j, wamount = unhandled_withdrawals[0]
-                    if wamount < amount:
-                        errs = (
-                            "The withdrawal from %s (%.8f %s) is lower than "
-                            "the first deposit (%s, %.8f %s) following it" % (
-                                self[i].dtime, amount, self[i].buycur,
-                                self[j].dtime, wamount, self[j].sellcur))
-                        if raise_on_error:
-                            raise ValueError(errs)
-                        else:
-                            log.warning(errs + " Ignoring this withdrawal, "
-                                        "trying next one.")
-                        del unhandled_withdrawals[0]
+                k = 0
+                while k < len(unhandled_withdrawals):
+                    j, wamount = unhandled_withdrawals[k]
+                    if self[j].sellcur != self[i].buycur:
+                        k += 1
                     else:
-                        # found a match
-                        num_unmatched -= 1
-                        num_feeless -= self[j].feeval == 0
-                        self.tlist[j].feeval += wamount - amount
-                        log.info('amended withdrawal: %s', self[j])
-                        del unhandled_withdrawals[0]
-                        break
+                        if wamount < amount:
+                            errs = (
+                                "The withdrawal from %s (%.8f %s, %s) is "
+                                "lower than the first deposit "
+                                "(%s, %.8f %s, %s) following it." % (
+                                    self[j].dtime, wamount, self[j].sellcur,
+                                    self[j].exchange,
+                                    self[i].dtime, amount, self[i].buycur,
+                                    self[i].exchange))
+                            if raise_on_error:
+                                raise ValueError(errs)
+                            else:
+                                log.warning(
+                                    errs + " Trying next withdrawal.")
+                            k += 1
+                        else:
+                            # found a match
+                            num_unmatched -= 1
+                            num_feeless -= self[j].feeval == 0
+                            if wamount > amount:
+                                self.tlist[j].feeval += wamount - amount
+                                log.info('amended withdrawal: %s', self[j])
+                            del unhandled_withdrawals[k]
+                            break
         if len(unhandled_withdrawals) > 0:
             log.warning(
                 '%i withdrawals could not be matched with deposits, of which '
@@ -399,7 +423,7 @@ class TradeHistory(object):
         for csvline in csvlines[skiprows:]:
             line = csvline.split(delimiter)
             self.tlist.append(
-                _parse_trades(line, param_locs, default_timezone))
+                _parse_trade(line, param_locs, default_timezone))
 
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
@@ -407,7 +431,7 @@ class TradeHistory(object):
         self.tlist.sort(key=attrgetter('dtime'), reverse=False)
 
     def append_poloniex_csv(
-            self, file_name, which_data='trades',
+            self, file_name, which_data='trades', condense_trades=False,
             delimiter=',', skiprows=1, default_timezone=tz.tzutc()):
         """Import trades from a csv file exported from Poloniex.com and
         add them to this TradeHistory.
@@ -420,6 +444,11 @@ class TradeHistory(object):
             'trading history', 'withdrawal history' and 'deposit history'
             in separate csv files. Specify which type is loaded here.
             Default is 'trades'.
+        :param condense_trades (bool):
+            Merge consecutive trades with identical order number? The
+            time of the last merged trade will be used for the resulting
+            trade. Only has an effect if `which_data == 'trades'`.
+
         :param default_timezone:
             This parameter is ignored if there is timezone data in the
             csv string. Otherwise, if None, the time data in the csv
@@ -435,7 +464,7 @@ class TradeHistory(object):
             raise ValueError(
                     '`which_data` must be one of "trades", '
                     '"widthdrawals" or "deposits".')
-        if wdata =='withd':
+        if wdata == 'withd':
             plocs = TPLOC_POLONIEX_WITHDRAWALS
             log.warning(
                 'Poloniex does not include withdrawal fees in exported '
@@ -446,7 +475,70 @@ class TradeHistory(object):
             plocs = TPLOC_POLONIEX_DEPOSITS
         else:
             plocs = TPLOC_POLONIEX_TRADES
-        return self.append_csv(
+
+        if plocs == TPLOC_POLONIEX_TRADES and condense_trades:
+            with open(file_name) as f:
+                csvlines = f.readlines()
+            # make sure plocs is a dict:
+            if not isinstance(plocs, dict):
+                varnames = Trade.__init__.__code__.co_varnames[1:]
+                plocs = dict(
+                    (varnames[i], p) for i, p in enumerate(plocs))
+            if default_timezone is None:
+                default_timezone = tz.tzlocal()
+
+            # current number of imported trades:
+            numtrades = len(self.tlist)
+            grouplist = []
+            groupid = None
+
+            # convert input lines to Trades:
+            num = len(csvlines) - skiprows
+            for i, csvline in enumerate(csvlines[skiprows:]):
+                line = csvline.split(delimiter)
+                trade = _parse_trade(line, plocs, default_timezone)
+                if groupid is None:
+                    groupid = trade.comment
+                if groupid == trade.comment:
+                    grouplist.append(trade)
+                if groupid != trade.comment or i == num - 1:
+                    # merge trades in grouplist with latest one:
+                    grouplist.sort(key=attrgetter('dtime'), reverse=True)
+                    last = grouplist[0]
+                    for t in grouplist[1:]:
+                        if (last.typ != t.typ
+                                or last.buycur != t.buycur
+                                or last.sellcur != t.sellcur
+                                or last.feecur != t.feecur
+                                or last.exchange != t.exchange
+                                or last.group != t.group):
+                            raise Exception(
+                                "Error in csv: The trades from %s and %s "
+                                "share the same order number, but differ "
+                                "in market, category or type." % (
+                                    last.dtime, t.dtime))
+                        else:
+                            last.buyval += t.buyval
+                            last.sellval += t.sellval
+                            last.feeval += t.feeval
+                    # add consolidated trade to self.tlist:
+                    self.tlist.append(last)
+                    # reset groupslist:
+                    if i < num - 1:
+                        grouplist = [trade]
+                        groupid = trade.comment
+
+                    else:
+                        grouplist = []
+                        groupid = None
+
+            log.info("Loaded %i transactions from %s",
+                     len(self.tlist) - numtrades, file_name)
+            # trades must be sorted:
+            self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+            return
+        else:
+            return self.append_csv(
                 file_name=file_name,
                 param_locs=plocs,
                 delimiter=delimiter,
@@ -503,10 +595,10 @@ class TradeHistory(object):
         txl = []
         for csvline in tradelines[skiprows:]:
             line = csvline.split(delimiter)
-            tdl.append(_parse_trades(line, tdp, default_timezone))
+            tdl.append(_parse_trade(line, tdp, default_timezone))
         for csvline in txlines[skiprows:]:
             line = csvline.split(delimiter)
-            txl.append(_parse_trades(line, txp, default_timezone))
+            txl.append(_parse_trade(line, txp, default_timezone))
         tdl.sort(key=attrgetter('dtime'), reverse=False)
         txl.sort(key=attrgetter('dtime'), reverse=False)
 
@@ -615,7 +707,7 @@ class TradeHistory(object):
         for csvline in csvlines[skiprows:]:
             line = csvline.split(delimiter)
             tlist.append(
-                _parse_trades(line, param_locs, default_timezone))
+                _parse_trade(line, param_locs, default_timezone))
 
         # The fees connected to disbursements are given on
         # an extra line; merge them:
