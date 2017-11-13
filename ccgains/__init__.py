@@ -27,9 +27,8 @@
 import logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-__all__ = ["historic_data", "relations", "trades", "bags"]
-
-from ccgains.historic_data import HistoricDataAPI, HistoricDataCSV
-from ccgains.relations import CurrencyRelation
-from ccgains.trades import Trade, TradeHistory
-from ccgains.bags import Bag, BagFIFO
+from .historic_data import HistoricDataAPI, HistoricDataCSV
+from .relations import CurrencyRelation
+from .trades import Trade, TradeHistory
+from .bags import Bag, BagFIFO
+from .reports import PaymentReport, CapitalGainsReport

@@ -260,8 +260,9 @@ class TestBagFIFO(unittest.TestCase):
         outfile.seek(0)
         bf2.load(outfile)
 
-        # skip bf2.bags and bf2.in_transit, since the bags are new objects:
-        excl = ['bags', 'in_transit']
+        # skip bf2.bags, bf2.in_transit and bf2.report, since the bags
+        # and the report are new objects:
+        excl = ['bags', 'in_transit', 'report']
         self.assertDictEqual(
             {k:v for k, v in bagfifo.__dict__.items() if k not in excl},
             {k:v for k, v in bf2.__dict__.items() if k not in excl})
@@ -273,6 +274,9 @@ class TestBagFIFO(unittest.TestCase):
             for i, b in enumerate(bagfifo.in_transit[cur]):
                 self.assertDictEqual(
                     b.__dict__, bf2.in_transit[cur][i].__dict__)
+        # We did not pay anything yet, thus, the report should be empty:
+        self.assertListEqual(bagfifo.report.data, bf2.report.data)
+        self.assertListEqual(bf2.report.data, [])
 
         # process the rest of the transactions:
         for t in [t3, t4, t5]:
@@ -282,8 +286,12 @@ class TestBagFIFO(unittest.TestCase):
             self.logger.info("Profit so far: %.2f %s\n",
                              bagfifo.profit, bagfifo.currency)
 
-        # equal, because now, bags lists should be empty:
-        self.assertDictEqual(bagfifo.__dict__, bf2.__dict__)
+        # Now, bags lists should be empty, but we still need to
+        # check the report manually:
+        self.assertDictEqual(
+            {k:v for k, v in bagfifo.__dict__.items() if k != 'report'},
+            {k:v for k, v in bf2.__dict__.items() if k != 'report'})
+        self.assertListEqual(bagfifo.report.data, bf2.report.data)
 
 
 if __name__ == '__main__':

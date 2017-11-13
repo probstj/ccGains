@@ -31,6 +31,7 @@ from datetime import datetime
 import json
 from os import path
 from operator import attrgetter
+from ccgains.reports import PaymentReport, CapitalGainsReport
 
 import logging
 log = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ def _json_encode_default(obj):
         return {'type(Bag)': obj.__dict__}
     elif isinstance(obj, datetime):
         return {'type(datetime)': str(obj)}
+    elif isinstance(obj, CapitalGainsReport):
+        return {'type(CapitalGainsReport)': obj.__dict__}
     else:
         raise TypeError(repr(obj) + " is not JSON serializable")
 
@@ -71,6 +74,9 @@ def _json_decode_hook(obj):
         return Bag(**obj['type(Bag)'])
     elif 'type(datetime)' in obj:
         return pd.Timestamp(obj['type(datetime)'])
+    elif 'type(CapitalGainsReport)' in obj:
+        return CapitalGainsReport(
+            data=obj['type(CapitalGainsReport)']['data'])
     return obj
 
 
@@ -190,17 +196,8 @@ class BagFIFO(object):
         # (self.totals['in_transit'] is updated in parallel)
         self.in_transit = {}
 
-        # Data for capital gains report:
-        # (A list of ['type', 'amount', 'currency', 'purchase_date',
-        #             'sell_date', 'exchange', 'is_short_term', 'cost',
-        #             'proceeds', 'profit']-lists.)
-        # 'type' is e.g.: 'sale', 'transfer fee', 'withdrawal fee'
-        # TODO: In future, this should be moved into an external helper
-        # module 'reports', which handles all reports (capital gain,
-        # bags used etc.) and provides methods to export to csv, pdf
-        # etc., including i18n support (translations), maybe even with
-        # plotting and statistical functions.
-        self.report_data = []
+        # Collects data for capital gains reports with every payment:
+        self.report = CapitalGainsReport()
 
         self._last_date = pd.Timestamp(0, tz='UTC')
         self.num_created_bags = 0
@@ -297,10 +294,8 @@ class BagFIFO(object):
                 if not d['totals'][ex]:
                     del d['totals'][ex]
 
+            # restore state:
             self.__dict__.update(d)
-            if hasattr(filepath_or_buffer, 'name'):
-                log.info("Restored bags' state from %s",
-                         filepath_or_buffer.name)
 
             # check consistency of totals:
             check_totals = {}
@@ -311,6 +306,10 @@ class BagFIFO(object):
                         check_totals[ex][bag.currency] = (
                             check_totals[ex].get(bag.currency, 0)
                             + bag.amount)
+                        if bag.cost_currency != self.currency:
+                            raise Exception(
+                                "Could not load, file is corrupted (bags' "
+                                "cost and base_currency do not match).")
             check_transit = {}
             for cur in self.in_transit:
                 for bag in self.in_transit[cur]:
@@ -323,6 +322,10 @@ class BagFIFO(object):
                 raise Exception(
                     "Could not load, file is corrupted "
                     "(totals don't add up).")
+
+            if hasattr(filepath_or_buffer, 'name'):
+                log.info("Restored bags' state from %s",
+                         filepath_or_buffer.name)
         else:
             with open(filepath_or_buffer, 'r') as f:
                 self.load(f)
@@ -348,38 +351,6 @@ class BagFIFO(object):
                 formatters={'amount': '{0:.8f}'.format,
                             'cost': '{0:.8f}'.format,
                             'price': '{0:.8f}'.format})
-
-    def get_report_data(self):
-        """Return a pandas.DataFrame listing the capital gains, made
-        with the processed trades.
-
-        The returned DataFrame will contain the columns:
-        ['type', 'amount', 'currency', 'purchase_date', 'sell_date',
-         'exchange', 'is_short_term', 'cost', 'proceeds', 'profit'].
-
-        """
-        return pd.DataFrame(
-            self.report_data,
-            columns=['type', 'amount', 'currency', 'purchase_date',
-                     'sell_date', 'exchange', 'is_short_term', 'cost',
-                     'proceeds', 'profit'])
-
-    def save_report_to_csv(
-            self, path_or_buf=None, **kwargs):
-        """Write the capital gains table to a csv file.
-
-        :param path_or_buf: string or file handle, default None
-            File path or object, if None is provided the result
-            is returned as a string.
-
-        """
-        df = self.get_report_data()
-        return df.to_csv(
-                path_or_buf,
-                float_format='%.8f',
-                index=False,
-                **kwargs)
-
 
     def _move_bags(self, src, dest, amount, currency):
         """Move *amount* of *currency* from one list of bags to another list
@@ -529,7 +500,8 @@ class BagFIFO(object):
         # any fees?
         if fee > 0:
             prof, _ = self.pay(
-                dtime, currency, fee, exchange, fee_ratio=1)
+                dtime, currency, fee, exchange, fee_ratio=1,
+                report_type='withdrawal fee')
             self.profit += prof
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
@@ -636,12 +608,14 @@ class BagFIFO(object):
         # bags on exchange (now it's done the latter way)?
         if fee > 0:
             prof, _ = self.pay(
-                    dtime, currency, fee, exchange, fee_ratio=1)
+                    dtime, currency, fee, exchange, fee_ratio=1,
+                    report_type='deposit fee')
             self.profit += prof
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
 
-    def pay(self, dtime, currency, amount, exchange, fee_ratio=0):
+    def pay(self, dtime, currency, amount, exchange, fee_ratio=0,
+            report_type='sale'):
         """Spend an amount of funds.
 
         The money is taken out of the oldest bag on the exchange with
@@ -651,7 +625,7 @@ class BagFIFO(object):
         (original cost) are decreased proportionally.
 
         This transaction and any profits or losses made will be logged
-        and added to self.report_data.
+        and added to the capital gains report data.
 
         If *amount* is higher than the available total amount,
         ValueError is raised.
@@ -667,6 +641,10 @@ class BagFIFO(object):
         :param fee_ratio (number, decimal or parsable string),
             0 <= fee_ratio <= 1: The ratio of *amount* that are fees.
             Default: 0.
+        :param report_type: String, default 'sale':
+            The type of transaction that will be added to the capital
+            gains report data, i.e. 'sale', 'withdrawal fee' etc.
+
         :returns: the tuple `(short_term_profit, total_proceeds)`,
             with each value given in units of the base currency, where:
             - `short_term_profit` is the taxable short term profit (or
@@ -779,13 +757,24 @@ class BagFIFO(object):
                  'yes' if short_term else 'no',
                  'less' if short_term else 'more')
 
-            # append ['type', 'amount', 'currency', 'purchase_date',
-            #         'sell_date', 'exchange', 'is_short_term', 'cost',
-            #         'proceeds', 'profit']:
-            self.report_data.append(
-                ['fee' if fee_ratio == 1 else 'sale',
-                 spent, currency, bag.dtime, dtime, exchange,
-                 short_term, bcost, corrproc, prof])
+            # Store report data:
+            self.report.add_payment(
+                PaymentReport(
+                    ptype=report_type,
+                    exchange=exchange,
+                    sell_date=dtime,
+                    currency=currency,
+                    to_pay=to_pay,
+                    fee_ratio=fee_ratio,
+                    bag_date=bag.dtime,
+                    bag_amount=bag.amount + spent,
+                    bag_spent=spent,
+                    cost_currency=bag.cost_currency,
+                    spent_cost=bcost,
+                    short_term=short_term,
+                    ex_rate=rate,
+                    proceeds=corrproc,
+                    profit=prof if short_term else 0))
 
             to_pay = remainder
             if to_pay > 0:
@@ -862,17 +851,18 @@ class BagFIFO(object):
             if trade.feeval > 0 and trade.feecur:
                 prof, _, = self.pay(
                     trade.dtime, trade.feecur, trade.feeval, trade.exchange,
-                    fee_ratio=1)
+                    fee_ratio=1, report_type='exchange fee')
                 self.profit += prof
                 log.info("Taxable loss due to fees: %.3f %s",
                          prof, self.currency)
 
         elif not trade.buycur or (trade.buyval == 0
             # In Poloniex' csv data, there is sometimes a trade listed
-            # with a nonzero sellval but with 0 buyval, because the
-            # latter amounts to less than 5e-9, which gets rounded down.
+            # with a non-zero sellval but with 0 buyval, because the
+            # latter amounts to less than 5e-9, which is rounded down.
             # But it is not a withdrawal, so exclude it here:
-                and trade.typ != 'Exchange'):
+                and (trade.exchange != 'Poloniex'
+                     or trade.typ == 'Withdrawal')):
             # Got nothing, so it must be a withdrawal:
             log.info("Withdrawing %.8f %s from %s (%s, fee: %.8f %s)",
                 trade.sellval, trade.sellcur,
@@ -929,7 +919,7 @@ class BagFIFO(object):
             # Pay the sold money (including fees):
             prof, proc = self.pay(
                 trade.dtime, trade.sellcur, trade.sellval,
-                trade.exchange, fee_ratio=fee_p)
+                trade.exchange, fee_ratio=fee_p, report_type='sale')
             self.profit += prof
 
             # Did we trade for another foreign/cryptocurrency?
