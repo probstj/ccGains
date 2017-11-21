@@ -31,7 +31,7 @@ from datetime import datetime
 import json
 from os import path
 from operator import attrgetter
-from ccgains.reports import PaymentReport, CapitalGainsReport
+from ccgains import reports
 
 import logging
 log = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ def _json_encode_default(obj):
         return {'type(Bag)': obj.__dict__}
     elif isinstance(obj, datetime):
         return {'type(datetime)': str(obj)}
-    elif isinstance(obj, CapitalGainsReport):
+    elif isinstance(obj, reports.CapitalGainsReport):
         return {'type(CapitalGainsReport)': obj.__dict__}
     else:
         raise TypeError(repr(obj) + " is not JSON serializable")
@@ -75,7 +75,7 @@ def _json_decode_hook(obj):
     elif 'type(datetime)' in obj:
         return pd.Timestamp(obj['type(datetime)'])
     elif 'type(CapitalGainsReport)' in obj:
-        return CapitalGainsReport(
+        return reports.CapitalGainsReport(
             data=obj['type(CapitalGainsReport)']['data'])
     return obj
 
@@ -111,7 +111,7 @@ class Bag(object):
         self.amount = Decimal(amount)
         self.currency = str(currency).upper()
         # datetime of purchase:
-        self.dtime = pd.Timestamp(dtime)
+        self.dtime = pd.Timestamp(dtime).tz_convert('UTC')
         self.cost_currency = str(cost_currency).upper()
         # total cost, incl. fees:
         if price is None:
@@ -197,7 +197,7 @@ class BagFIFO(object):
         self.in_transit = {}
 
         # Collects data for capital gains reports with every payment:
-        self.report = CapitalGainsReport()
+        self.report = reports.CapitalGainsReport()
 
         self._last_date = pd.Timestamp(0, tz='UTC')
         self.num_created_bags = 0
@@ -227,7 +227,7 @@ class BagFIFO(object):
                 'Trades must be processed in order. Last processed trade '
                 'was from %s, this one is from %s' % (
                         self._last_date, dtime))
-        self._last_date = pd.Timestamp(dtime)
+        self._last_date = pd.Timestamp(dtime).tz_convert('UTC')
 
     def to_json(self, **kwargs):
         """Return a JSON formatted string representation of the current
@@ -501,7 +501,7 @@ class BagFIFO(object):
         if fee > 0:
             prof, _ = self.pay(
                 dtime, currency, fee, exchange, fee_ratio=1,
-                report_type='withdrawal fee')
+                report_info={'kind': 'withdrawal fee'})
             self.profit += prof
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
@@ -609,13 +609,13 @@ class BagFIFO(object):
         if fee > 0:
             prof, _ = self.pay(
                     dtime, currency, fee, exchange, fee_ratio=1,
-                    report_type='deposit fee')
+                    report_info={'kind': 'deposit fee'})
             self.profit += prof
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
 
     def pay(self, dtime, currency, amount, exchange, fee_ratio=0,
-            report_type='sale'):
+            report_info=None):
         """Spend an amount of funds.
 
         The money is taken out of the oldest bag on the exchange with
@@ -641,9 +641,20 @@ class BagFIFO(object):
         :param fee_ratio (number, decimal or parsable string),
             0 <= fee_ratio <= 1: The ratio of *amount* that are fees.
             Default: 0.
-        :param report_type: String, default 'sale':
-            The type of transaction that will be added to the capital
-            gains report data, i.e. 'sale', 'withdrawal fee' etc.
+        :param report_info: dict, default None:
+            Additional information that will be added to the capital
+            gains report data. Currently, the only keys looked for are:
+            'kind', 'buy_currency' and 'buy_ratio'. For each one of
+            them omitted in the dict, these default values will be used:
+            `{'kind': 'payment', 'buy_currency': '', 'buy_ratio': 0}`,
+            This is also the default dict used when *report_info* is
+            `None`.
+            - 'kind' is the type of transaction, i.e. 'sale',
+            'withdrawal fee', 'payment' etc.;
+            - 'buy_currency' is the currency bought in this trade;
+            - 'buy_ratio' is the amount of 'buy_currency' bought with
+            one unit of *currency*, i.e. `bought_amount / spent_amount`;
+            only used if 'buy_currency' is not empty.
 
         :returns: the tuple `(short_term_profit, total_proceeds)`,
             with each value given in units of the base currency, where:
@@ -758,11 +769,17 @@ class BagFIFO(object):
                  'less' if short_term else 'more')
 
             # Store report data:
+            repinfo = {
+                'kind': 'payment', 'buy_currency': '', 'buy_ratio': 0}
+            if report_info is not None:
+                repinfo.update(report_info)
+            if not repinfo.get('buy_currency', ''):
+                repinfo['buy_ratio'] = 0
             self.report.add_payment(
-                PaymentReport(
-                    ptype=report_type,
+                reports.PaymentReport(
+                    kind=repinfo['kind'],
                     exchange=exchange,
-                    sell_date=dtime,
+                    sell_date=pd.Timestamp(dtime).tz_convert('UTC'),
                     currency=currency,
                     to_pay=to_pay,
                     fee_ratio=fee_ratio,
@@ -774,7 +791,9 @@ class BagFIFO(object):
                     short_term=short_term,
                     ex_rate=rate,
                     proceeds=corrproc,
-                    profit=prof if short_term else 0))
+                    profit=prof,
+                    buy_currency=repinfo['buy_currency'],
+                    buy_ratio=repinfo['buy_ratio']))
 
             to_pay = remainder
             if to_pay > 0:
@@ -851,7 +870,8 @@ class BagFIFO(object):
             if trade.feeval > 0 and trade.feecur:
                 prof, _, = self.pay(
                     trade.dtime, trade.feecur, trade.feeval, trade.exchange,
-                    fee_ratio=1, report_type='exchange fee')
+                    fee_ratio=1,
+                    report_info={'kind': 'exchange fee'})
                 self.profit += prof
                 log.info("Taxable loss due to fees: %.3f %s",
                          prof, self.currency)
@@ -919,7 +939,11 @@ class BagFIFO(object):
             # Pay the sold money (including fees):
             prof, proc = self.pay(
                 trade.dtime, trade.sellcur, trade.sellval,
-                trade.exchange, fee_ratio=fee_p, report_type='sale')
+                trade.exchange, fee_ratio=fee_p,
+                report_info={
+                    'kind': 'sale',
+                    'buy_currency': trade.buycur,
+                    'buy_ratio': trade.buyval / trade.sellval})
             self.profit += prof
 
             # Did we trade for another foreign/cryptocurrency?

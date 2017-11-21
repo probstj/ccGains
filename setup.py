@@ -39,7 +39,11 @@ setup(name='ccGains',
           'tables',
           'numpy',
           'pandas',
-          'requests'
+          'requests',
+          'jinja2', # I should make this and the next optional some day.
+          'babel',
+          'weasyprint',
       ],
+      include_package_data=True,
       zip_safe=False)
 

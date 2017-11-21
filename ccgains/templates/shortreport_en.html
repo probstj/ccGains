@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Capital gains report {{ year }} - created by ccGains</title>
+        <style type="text/css">
+            table tr td, table tr th {
+                border: 1px solid #ccc;
+                text-align: left;
+                padding: 4px 10px 4px 5px;
+            }
+
+            table {
+                border-spacing: 0px;
+                border-collapse: collapse;
+                margin-bottom: 1.4em;
+                width: 100%;
+            }
+
+            .summary table {
+                width: 60%;
+            }
+
+            th {
+                font-weight: bold;
+            }
+
+            thead th {
+                background: lightsteelblue;
+            }
+
+            tbody tr:nth-child(even) td,
+            tbody tr:nth-child(even) th {
+                background: whitesmoke;
+            }
+
+            .align-right-columns td:nth-child(3),
+            .align-right-columns td:nth-child(8),
+            .align-right-columns td:nth-child(9),
+            .align-right-columns td:nth-child(10),
+            .align-right-columns td:nth-child(11)
+            {
+              text-align: right;
+            }
+
+            body {
+                font: {{ fontsize }}px Helvetica,Arial,sans-serif;
+                line-height: 1.2;
+                color: #000;
+                padding: 0px 0px;
+                margin: 0px;
+            }
+
+            hr {
+                margin: 0px 0;
+                border: 0;
+                border-bottom: 1px solid #ddd;
+            }
+
+            p {
+                margin-top: 0.5em;
+                margin-bottom: 0.5em;
+            }
+
+            @media print {
+                @page port { size: portrait; }
+                .portrait { page: port; }
+
+                @page land { size: landscape; }
+                .landscape { page: land; }
+
+                .break { page-break-before: always; }
+
+                @page {
+                    @bottom-right {
+                        content: counter(page) " / " counter(pages);
+                    }
+                    @top-center {
+                        content: string(heading, first-except);
+                    }
+                    @top-right {
+                        content: "{{ today }}";
+                    }
+                }
+            }
+            h2 { string-set: heading content() }
+
+        </style>
+    </head>
+    <body>
+        <div class="landscape">
+            <h2>Capital Gains Report {{ year }}</h2>
+            <h3>for trades with digital currencies</h3>
+            <br>
+            <div class="summary">
+                <table border="1" class="dataframe">
+                  <thead>
+                    <tr><th>Summary</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th>Period</th>
+                      <td>{{ fromdate }} to {{ todate }}</td>
+                    </tr>
+                    <tr>
+                      <th>Total profit (long and short term) </th>
+                      <td>{{ total_profit }}</td>
+                    </tr>
+                    <tr>
+		      <th>Short term profit<br>(for currencies in possession less than a year) </th>
+                      <td>{{ short_term_profit }}</td>
+                    </tr>
+                    <tr>
+                      <th>Number of trades (listed below)</th>
+                      <td>{{ num_trades }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <br>
+            </div>
+            <div class="listing">
+                <h4>Trades listing</h4>
+                {{ cgtable }}
+            </div>
+        </div>
+
+    </body>
+</html>

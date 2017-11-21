@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Capital gains report {{ year }} - created by ccGains</title>
+        <style type="text/css">
+            table tr td,table tr th {
+                border: 0px solid #ccc;
+                text-align: left;
+                padding: 0px 13px;
+                margin: 0;
+            }
+
+            table {
+                border-spacing: 0px;
+                border-collapse: collapse;
+            }
+
+            body {
+                font: {{ fontsize }}px Helvetica,Arial,sans-serif;
+                line-height: 1.2;
+                color: #000;
+                padding: 0px 15px;
+            }
+
+            hr {
+                margin: 0px 0;
+                border: 0;
+                border-bottom: 1px solid #ddd;
+            }
+
+            p {
+                margin-top: 0.5em;
+                margin-bottom: 0.5em;
+            }
+
+            .salereport {
+                background-color: whitesmoke;
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 0.1em;
+                padding-bottom: 0.1em;
+                margin: 0px;
+            }
+
+            .salehead {
+                background-color: lightsteelblue;
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 3px;
+                padding-bottom: 3px;
+                margin-top: 10px;
+                margin-bottom: 0px;
+            }
+
+            .saleblock{
+                page-break-inside: avoid;
+            }
+        </style>
+    </head>
+    <body>
+        {% set vars = {'total': 0} %}
+        {% for sale in sales_data.itertuples() %}
+        <div class="saleblock">
+            <p class="salehead">
+                <span style="float: right">#{{ loop.index }}</span>
+                <strong>{{ sale.kind|capitalize }} am {{ sale.sell_date }}</strong>
+            </p>
+            <div class="salereport">
+                {# amount of other currency bought in this sale: #}
+                {% set buy_amount = sale.buy_ratio * sale.to_pay %}
+                {# proceeds are value of spent amount at sale.sell_date: #}
+                {% set proc = sale.bag_spent * sale.ex_rate %}
+                {# fee-corrected proceeds for this partial sale: #}
+                {% set corrproc = proc * (1 - sale.fee_ratio) %}
+                {# profit for this sale (nevermind short/long term): #}
+                {% set prof = corrproc - sale.spent_cost %}
+                {% set _ = vars.update({'total': vars['total'] + prof}) %}
+                <p>
+                    Verkauf von <strong>{{ sale.to_pay|round(8) }} {{ sale.currency }}</strong>
+                    (davon <strong>{{ sale.fee_ratio|format_percent('#.###\xa0%') }}</strong> Gebühren)
+                    {% if sale.buy_currency %}
+                    für <strong>{{ buy_amount|round(8) }} {{ sale.buy_currency }}</strong>
+                    {% endif %}
+                    bei <strong>{{ sale.exchange }}</strong>
+                </br>
+                    Verwende Kaufmenge erworben am <strong>{{ sale.bag_date }}</strong>,
+                    Inhalt der Kaufmenge: <strong>{{ sale.bag_amount }} {{ sale.currency }}</strong>
+                </p>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>Erwerbskosten der Kaufmenge:</td>
+                            <td>
+                                <strong>{{ sale.spent_cost|round(2) }} {{ sale.cost_currency }}</strong>
+                            </td>
+                            <td>(Preis: {{ (sale.spent_cost / sale.bag_spent)|round(8) }} {{ sale.cost_currency }} / {{ sale.currency }})</td>
+                        </tr>
+                        <tr>
+                            <td>Erlös:</td>
+                            <td>{{ proc|round(2) }} {{ sale.cost_currency }}</td>
+                            <td>(Preis: {{ sale.ex_rate|round(8) }} {{ sale.cost_currency }} / {{ sale.currency }})</td>
+                        </tr>
+                        <tr>
+                            <td>Erlös abzgl. Gebühren:</td>
+                            <td>
+                                <strong>{{ corrproc|round(2) }} {{ sale.cost_currency }}</strong>
+                            </td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>Gewinn:</td>
+                            <td>
+                                <strong>{{ prof|round(2) }} {{ sale.cost_currency }}</strong>
+                            </td>
+                            <td>{% if prof < 0 %}(Verlust){% endif %}</td>
+                        </tr>
+                        <tr>
+                            <td>Zu versteuern:</td>
+                            {% if sale.short_term %}
+                            <td>Ja</td>
+                            <td>(In Besitz kürzer als ein Jahr)</td>
+                            {% else %}
+                            <td>Nein</td>
+                            <td>(In Besitz länger als ein Jahr)</td>
+                            {% endif%}
+                        </tr>
+                    </tbody>
+                </table>
+                <p>
+                    Inhalt der Kaufmenge nach dem Verkauf: <strong>{{ (sale.bag_amount - sale.bag_spent)|round(8) }} {{ sale.currency }}</strong>;
+                    Verbleibt zu bezahlen mit nächster Kaufmenge: <strong>{{ (sale.to_pay - sale.bag_spent)|round(8) }} {{ sale.currency }}</strong>
+                    <br/>
+                    Summe zu versteuernder Gewinn {{ year }}: <strong>{{ vars['total']|round(2) }} {{ sale.cost_currency }}</strong>
+                <p/>
+
+            </div>
+            <hr/>
+        </div>
+        {% endfor %}
+
+
+    </body>
+</html>
