@@ -240,7 +240,7 @@ class CapitalGainsReport(object):
         """Write the capital gains table to a csv file.
 
         The csv table will contain the columns:
-        'type', 'amount', 'currency', 'purchase_date', 'sell_date',
+        'kind', 'amount', 'currency', 'purchase_date', 'sell_date',
         'exchange', 'short_term', 'cost', 'proceeds' and 'profit'.
 
         :param path_or_buf: string or file handle, default None
@@ -472,24 +472,33 @@ class CapitalGainsReport(object):
             babel.numbers.decimal.Context(
                 rounding=babel.numbers.decimal.ROUND_DOWN)):
             html = template.render({
-                'year': year if year else '',
-                'today': babel.dates.format_date(
-                        babel.dates.date.today(),
-                        locale=locale if locale else babel.dates.LC_TIME),
-                'fontsize': font_size,
-                "fromdate": babel.dates.format_date(
-                        fromdate,
-                        locale=locale if locale else babel.dates.LC_TIME),
-                "todate": babel.dates.format_date(
-                        todate,
-                        locale=locale if locale else babel.dates.LC_TIME),
-                "total_profit": price_formatter(total_profit),
-                "short_term_profit": price_formatter(short_term_profit),
-                "num_trades": len(df),
-                'cgtable': df.to_html(
-                        index=True, bold_rows=False,
-                        classes='align-right-columns',
-                        formatters=formatters)})
+                'year'    :
+                        year if year else '',
+                'today'   :
+                        babel.dates.format_date(
+                            babel.dates.date.today(),
+                            locale=locale if locale else babel.dates.LC_TIME),
+                'fontsize':
+                        font_size,
+                "fromdate":
+                        babel.dates.format_date(
+                            fromdate,
+                            locale=locale if locale else babel.dates.LC_TIME),
+                "todate"  :
+                        babel.dates.format_date(
+                            todate,
+                            locale=locale if locale else babel.dates.LC_TIME),
+                "total_profit":
+                        price_formatter(total_profit),
+                "short_term_profit":
+                        price_formatter(short_term_profit),
+                "num_trades":
+                        len(df),
+                'cgtable':
+                        df.to_html(
+                            index=True, bold_rows=False,
+                            classes='align-right-columns',
+                            formatters=formatters)})
         return html
 
     def export_report_to_pdf(

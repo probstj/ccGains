@@ -882,7 +882,7 @@ class BagFIFO(object):
             # latter amounts to less than 5e-9, which is rounded down.
             # But it is not a withdrawal, so exclude it here:
                 and (trade.exchange != 'Poloniex'
-                     or trade.typ == 'Withdrawal')):
+                     or trade.kind == 'Withdrawal')):
             # Got nothing, so it must be a withdrawal:
             log.info("Withdrawing %.8f %s from %s (%s, fee: %.8f %s)",
                 trade.sellval, trade.sellcur,

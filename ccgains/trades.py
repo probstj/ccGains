@@ -24,10 +24,9 @@
 # Get the latest version at: https://github.com/probstj/ccGains
 #
 
+import pandas as pd
 from decimal import Decimal
-from datetime import datetime
 from dateutil import tz
-from dateutil.parser import parse as dateparse
 from operator import attrgetter
 
 import logging
@@ -43,7 +42,7 @@ log = logging.getLogger(__name__)
 # list of the splitted strings in the row as parameter).
 #
 # For reference, the list of parameters accepted by Trade:
-# ["ttype", "dtime", "buy_currency", "buy_amount", "sell_currency",
+# ["kind", "dtime", "buy_currency", "buy_amount", "sell_currency",
 # "sell_amount", "fee_currency", "fee_amount",
 # "exchange", "mark", "comment"]
 # (Note that buy and sell values may be swapped if one
@@ -52,7 +51,7 @@ log = logging.getLogger(__name__)
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
 TPLOC_POLONIEX_TRADES = {
-    'ttype': 2, 'dtime': 0,
+    'kind': 2, 'dtime': 0,
     'buy_currency': lambda cols: cols[1].split('/')[0],
     'buy_amount': 10,
     'sell_currency': lambda cols: cols[1].split('/')[1],
@@ -71,7 +70,7 @@ TPLOC_POLONIEX_DEPOSITS = [
 
 # Trade parameters in csv from Bitcoin.de:
 TPLOC_BITCOINDE = {
-    'ttype': 1, 'dtime': 0,
+    'kind': 1, 'dtime': 0,
     'buy_currency': 'BTC', 'buy_amount': 9,
     'sell_currency': 'EUR', 'sell_amount': 8,
     'fee_currency': 'BTC',
@@ -91,16 +90,19 @@ TPLOC_BISQ_TRANSACTIONS = [
         1, 0, 'BTC', 4, '', '0', -1, -1, "Bitsquare/Bisq", '', 2]
 
 
-def _parse_trade(str_list, param_dict, default_timezone):
+def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
     to *param_locs*.
 
-    :param param_dict (dict):
+    :param param_locs (dict or list):
         Locations of Trade's parameters in str_list.
         Each value denotes the index where a `Trade`-parameter is
         to be found in str_list, the keys are the parameter names.
+        If param_locs is a list, the position in the list corresponds
+        to the parameter position in Trade.__init__, ignoring `self`.
+
         If the parameter value is not in str_list, use -1 for an empty
-        value, a string for a constant value to fill the parameter with,
+        value, a string for a constant value to supply as parameter,
         or a function of one parameter (which will accept str_list as
         parameter).
         Note that buy and sell values may be given in reverse order
@@ -114,8 +116,14 @@ def _parse_trade(str_list, param_dict, default_timezone):
     :return: Trade object
 
     """
+    # make a dict:
+    if not isinstance(param_locs, dict):
+        varnames = Trade.__init__.__code__.co_varnames[1:12]
+        param_locs = dict(
+            (varnames[i], p) for i, p in enumerate(param_locs))
+
     pdict = {}
-    for key, val in param_dict.items():
+    for key, val in param_locs.items():
         if isinstance(val, int):
             if val == -1:
                 pdict[key] = ''
@@ -126,19 +134,7 @@ def _parse_trade(str_list, param_dict, default_timezone):
         else:
             pdict[key] = val
 
-    # parse datetime:
-    try:
-        dt = dateparse(pdict['dtime'])
-    except ValueError:
-        raise ValueError(
-            "Could not parse datetime. Is the correct column "
-            "specified in `param_locs`?")
-    # add timezone if not in string:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=default_timezone)
-    pdict['dtime'] = dt
-
-    return Trade(**pdict)
+    return Trade(default_timezone=default_timezone, **pdict)
 
 
 class Trade(object):
@@ -147,20 +143,23 @@ class Trade(object):
     """
 
     def __init__(
-            self, ttype, dtime, buy_currency, buy_amount,
+            self, kind, dtime, buy_currency, buy_amount,
             sell_currency, sell_amount, fee_currency='', fee_amount=0,
-            exchange='', mark='', comment=''):
+            exchange='', mark='', comment='', default_timezone=None):
         """Create a Trade object.
 
         All parameters may be strings, the numerical values will be
         converted to decimal.Decimal values, *dtime* to a datetime.
 
-        :param ttype: a string denoting the type of transaction, which
+        :param kind: a string denoting the kind of transaction, which
             may be e.g. "trade", "withdrawal", "deposit". Not currently
             used, so it can be any comment.
 
-        :param dtime: a string or datetime object:
-            The date and time of the transaction.
+        :param dtime: a string, number or datetime object:
+            The date and time of the transaction. A string will be
+            parsed with pandas.Timestamp; a number will be interpreted
+            as the elapsed seconds since the epoch (unix timestamp),
+            in UTC timezone.
 
         :param buy_amount:
             The amount of *buy_currency* bought. This value excludes any
@@ -182,8 +181,18 @@ class Trade(object):
         :param fee_amount:
             The fees paid, given in *fee_currency*. May have any sign,
             the absolute value will be taken as fee amount regardless.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data included
+            in *dtime*, or if *dtime* is a number (unix timestamp), in
+            which case the timezone will always be UTC. Otherwise, if
+            default_timezone=None (default), the time data in *dtime*
+            will be interpreted as time in the local timezone according
+            to the locale setting; or it must be a tzinfo subclass
+            (from dateutil.tz or pytz), which will be added to *dtime*.
+
         """
-        self.typ = ttype
+        self.kind = kind
         if buy_amount:
             self.buyval = Decimal(buy_amount)
         else:
@@ -216,14 +225,18 @@ class Trade(object):
         self.exchange = exchange
         self.mark = mark
         self.comment = comment
-        # save the time as datetime object:
-        if isinstance(dtime, datetime):
-            self.dtime = dtime
-        elif isinstance(dtime, (float, int)):
-            self.dtime = datetime.utcfromtimestamp(dtime).replace(
-                    tzinfo=tz.tzutc())
+        # save the time as pandas.Timestamp object:
+        if isinstance(dtime, (float, int)):
+            # unix timestamp
+            self.dtime = pd.Timestamp(dtime, unit='s').tz_localize('UTC')
         else:
-            self.dtime = dateparse(dtime)
+            self.dtime = pd.Timestamp(dtime)
+        # add default timezone if not included:
+        if self.dtime.tzinfo is None:
+            self.dtime = self.dtime.tz_localize(
+                tz.tzlocal() if default_timezone is None else default_timezone)
+        # internally, dtime is saved as UTC time:
+        self.dtime = self.dtime.tz_convert('UTC')
 
         if (self.feeval > 0
                 and self.feecur != buy_currency
@@ -235,7 +248,7 @@ class Trade(object):
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
         for val in [
-                self.typ, self.dtime,
+                self.kind, self.dtime,
                 self.buycur, self.buyval,
                 self.sellcur, self.sellval,
                 self.feecur, self.feeval,
@@ -248,7 +261,7 @@ class Trade(object):
         return delimiter.join(strings) + endl
 
     def __str__(self):
-        s = ("%(typ)s on %(dtime)s: Acquired %(buyval).8f %(buycur)s, "
+        s = ("%(kind)s on %(dtime)s: Acquired %(buyval).8f %(buycur)s, "
              "disposed of %(sellval).8f %(sellcur)s "
              "for a fee of %(feeval).8f %(feecur)s") % self.__dict__
         if self.exchange:
@@ -276,6 +289,49 @@ class TradeHistory(object):
 
     def __getitem__(self, item):
         return self.tlist[item]
+
+    def to_data_frame(self, year=None, convert_timezone=True):
+        """Put all trades in one big pandas.DataFrame.
+
+        :param year: None or 4-digit integer, default: None;
+            Leave `None` to export all trades or choose a specific
+            year to export.
+        :param convert_timezone:
+            string, pytz.timezone, dateutil.tz.tzfile, True or False;
+            All dates will be converted to this timezone. The default
+            value, True, will lead to a conversion to the locale
+            timezone according to the system's locale setting.
+            False keeps all dates at UTC time. Otherwise, specify a
+            parameter that will be forwarded to
+            `pandas.Timestamp.tz_convert()`.
+
+        """
+        l = (trd.__dict__ for trd in self.tlist)
+        # use cols to set a nice order:
+        cols = ['kind', 'dtime', 'buycur', 'buyval', 'sellcur', 'sellval',
+                'feecur', 'feeval', 'exchange', 'mark', 'comment']
+        df = pd.DataFrame(l, columns=cols)
+
+        # give the columns slightly better names:
+        newcols = Trade.__init__.__code__.co_varnames[1:12]
+        df.columns = newcols
+
+        # Select year:
+        if year is not None:
+            df = df[  (df['dtime'] >= str(year))
+                    & (df['dtime'] < str(year + 1))]
+
+        # Convert timezones :
+        if convert_timezone:
+            if convert_timezone is True:
+                convert_timezone = tz.tzlocal()
+            appfun = lambda dt: dt.tz_convert(convert_timezone)
+            df.loc[:, 'dtime'] = df.loc[:, 'dtime'].apply(appfun)
+
+        return df
+
+    def __str__(self):
+        return self.to_data_frame().to_string()
 
     def add_missing_transaction_fees(self, raise_on_error=True):
         """Some exchanges does not include withdrawal fees in their
@@ -310,7 +366,7 @@ class TradeHistory(object):
         # (Note: We are keeping both in one list to keep their order)
         translist = []
         for i, t in enumerate(self.tlist):
-            if t.exchange == 'Bitsquare/Bisq' and t.typ.startswith('MultiSig'):
+            if t.exchange == 'Bitsquare/Bisq' and t.kind.startswith('MultiSig'):
                 # The Bitsquare/Bisq MultiSig deposits and payouts are
                 # already taken care of and their fees properly added
                 # when importing from csv in self.append_bisq_csv, so
@@ -322,7 +378,7 @@ class TradeHistory(object):
                 # latter amounts to less than 5e-9, which is rounded down.
                 # But it is not a withdrawal, so exclude it here:
                 and (t.exchange != 'Poloniex'
-                     or t.typ == 'Withdrawal'))):
+                     or t.kind == 'Withdrawal'))):
                     # This seems to be a withdrawal
                     if t.feeval and t.sellcur != t.feecur:
                         raise ValueError(
@@ -336,8 +392,8 @@ class TradeHistory(object):
         unhandled_withdrawals = []
         num_unmatched = 0
         num_feeless = 0
-        for i, typ, amount in translist:
-            if typ == 'w':
+        for i, kind, amount in translist:
+            if kind == 'w':
                 unhandled_withdrawals.append((i, amount))
                 num_unmatched += 1
                 num_feeless += self[i].feeval == 0
@@ -409,11 +465,7 @@ class TradeHistory(object):
         """
         with open(file_name) as f:
             csvlines = f.readlines()
-        # make a dict:
-        if not isinstance(param_locs, dict):
-            varnames = Trade.__init__.__code__.co_varnames[1:]
-            param_locs = dict(
-                    (varnames[i], p) for i, p in enumerate(param_locs))
+
         if default_timezone is None:
             default_timezone = tz.tzlocal()
 
@@ -422,6 +474,9 @@ class TradeHistory(object):
         # convert input lines to Trades:
         for csvline in csvlines[skiprows:]:
             line = csvline.split(delimiter)
+            if not line:
+                # ignore empty lines
+                continue
             self.tlist.append(
                 _parse_trade(line, param_locs, default_timezone))
 
@@ -429,6 +484,30 @@ class TradeHistory(object):
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
         self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+
+    def append_ccgains_csv(
+            self, file_name, delimiter=',', skiprows=1,
+            default_timezone=None):
+        """Import trades from a csv file exported from
+        `ccgains.TradeHistory.export_to_csv()` and add them to this
+        TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None (default) the time data in
+            the csv will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz)
+
+        """
+        return self.append_csv(
+            file_name=file_name,
+            param_locs=range(11),
+            delimiter=delimiter,
+            skiprows=skiprows,
+            default_timezone=default_timezone)
 
     def append_poloniex_csv(
             self, file_name, which_data='trades', condense_trades=False,
@@ -479,11 +558,7 @@ class TradeHistory(object):
         if plocs == TPLOC_POLONIEX_TRADES and condense_trades:
             with open(file_name) as f:
                 csvlines = f.readlines()
-            # make sure plocs is a dict:
-            if not isinstance(plocs, dict):
-                varnames = Trade.__init__.__code__.co_varnames[1:]
-                plocs = dict(
-                    (varnames[i], p) for i, p in enumerate(plocs))
+
             if default_timezone is None:
                 default_timezone = tz.tzlocal()
 
@@ -506,16 +581,16 @@ class TradeHistory(object):
                     grouplist.sort(key=attrgetter('dtime'), reverse=True)
                     last = grouplist[0]
                     for t in grouplist[1:]:
-                        if (last.typ != t.typ
+                        if (last.kind != t.kind
                                 or last.buycur != t.buycur
                                 or last.sellcur != t.sellcur
                                 or last.feecur != t.feecur
                                 or last.exchange != t.exchange
-                                or last.group != t.group):
+                                or last.mark != t.mark):
                             raise Exception(
                                 "Error in csv: The trades from %s and %s "
                                 "share the same order number, but differ "
-                                "in market, category or type." % (
+                                "in market, category or kind." % (
                                     last.dtime, t.dtime))
                         else:
                             last.buyval += t.buyval
@@ -542,6 +617,7 @@ class TradeHistory(object):
                 file_name=file_name,
                 param_locs=plocs,
                 delimiter=delimiter,
+                skiprows=skiprows,
                 default_timezone=default_timezone)
 
     def append_bisq_csv(
@@ -559,7 +635,9 @@ class TradeHistory(object):
         trades, both files must be imported together.
 
         :param trade_file_name:
-            The csv file name with the trading history
+            The csv file name with the trading history.
+            In case you only made transactions and no trades, this
+            may be an empty string: ""
         :param transaction_file_name:
             The csv file name with the transaction history
         :param default_timezone:
@@ -576,29 +654,25 @@ class TradeHistory(object):
         if default_timezone is None:
             default_timezone = tz.tzlocal()
 
-        with open(trade_file_name) as f:
-            tradelines = f.readlines()
+        if trade_file_name:
+            with open(trade_file_name) as f:
+                tradelines = f.readlines()
+        else:
+            tradelines = ""
         with open(transactions_file_name) as f:
             txlines = f.readlines()
-
-        # make sure param_locs are dicts:
-        tdp = TPLOC_BISQ_TRADES
-        txp = TPLOC_BISQ_TRANSACTIONS
-        varnames = Trade.__init__.__code__.co_varnames[1:]
-        if not isinstance(tdp, dict):
-            tdp = dict((varnames[i], p) for i, p in enumerate(tdp))
-        if not isinstance(txp, dict):
-            txp = dict((varnames[i], p) for i, p in enumerate(txp))
 
         # convert input lines to Trades:
         tdl = []
         txl = []
         for csvline in tradelines[skiprows:]:
             line = csvline.split(delimiter)
-            tdl.append(_parse_trade(line, tdp, default_timezone))
+            tdl.append(_parse_trade(line, TPLOC_BISQ_TRADES,
+                                    default_timezone))
         for csvline in txlines[skiprows:]:
             line = csvline.split(delimiter)
-            txl.append(_parse_trade(line, txp, default_timezone))
+            txl.append(_parse_trade(line, TPLOC_BISQ_TRANSACTIONS,
+                                    default_timezone))
         tdl.sort(key=attrgetter('dtime'), reverse=False)
         txl.sort(key=attrgetter('dtime'), reverse=False)
 
@@ -609,12 +683,12 @@ class TradeHistory(object):
             found = []
             # the trade id:
             tid = trade.comment
-            # find 3 matching transactions, whose typ will contain tid:
+            # find 3 matching transactions, whose kind will contain tid:
             # (The multisig deposit and payout will be placed in `found`)
             while txlpos < len(txl) and len(found) < 2:
                 tx = txl[txlpos]
-                if 'Create offer fee' in tx.typ:
-                    if tid in tx.typ:
+                if 'Create offer fee' in tx.kind:
+                    if tid in tx.kind:
                         # This trade's sell value is actually a fee:
                         tx.feecur, tx.feeval = tx.sellcur, tx.sellval
                         tx.sellval = 0
@@ -623,9 +697,9 @@ class TradeHistory(object):
                         # which is a loss and not tax deductable, mark
                         # it as such:
                         # (Maybe bisq does it already? I haven't got a clue)
-                        tx.typ = tx.typ.replace(
+                        tx.kind = tx.kind.replace(
                                     'Create', 'Canceled') + ' (Loss)'
-                elif tid in tx.typ:
+                elif tid in tx.kind:
                     # Hold the matching multisig deposit and payout:
                     found.append(tx)
                 txlpos += 1
@@ -645,12 +719,12 @@ class TradeHistory(object):
         # No more trades. Find remaining canceled offer fees if any:
         while txlpos < len(txl):
             tx = txl[txlpos]
-            if 'Create offer fee' in tx.typ:
+            if 'Create offer fee' in tx.kind:
                 # This is a fee for an offer that was never taken,
                 # which is a loss and not tax deductable, mark
                 # it as such:
                 # (Maybe bisq does it already? I haven't got a clue)
-                tx.typ = tx.typ.replace('Create', 'Canceled') + ' (Loss)'
+                tx.kind = tx.kind.replace('Create', 'Canceled') + ' (Loss)'
             txlpos += 1
 
         # Add both lists to self.tlist:
@@ -692,12 +766,7 @@ class TradeHistory(object):
         """
         with open(file_name) as f:
             csvlines = f.readlines()
-        # make sure param locs is a dict:
-        param_locs = TPLOC_BITCOINDE
-        if not isinstance(param_locs, dict):
-            varnames = Trade.__init__.__code__.co_varnames[1:]
-            param_locs = dict(
-                    (varnames[i], p) for i, p in enumerate(param_locs))
+
         if default_timezone is None:
             default_timezone = tz.tzlocal()
 
@@ -707,13 +776,13 @@ class TradeHistory(object):
         for csvline in csvlines[skiprows:]:
             line = csvline.split(delimiter)
             tlist.append(
-                _parse_trade(line, param_locs, default_timezone))
+                _parse_trade(line, TPLOC_BITCOINDE, default_timezone))
 
         # The fees connected to disbursements are given on
         # an extra line; merge them:
         i = 0
         while i < len(tlist):
-            if (tlist[i].typ == 'Network fee'
+            if (tlist[i].kind == 'Network fee'
                     and tlist[i - 1].comment == tlist[i].comment):
                 tlist[i - 1].sellval += tlist[i].sellval
                 tlist[i - 1].feeval += tlist[i].feeval
@@ -728,3 +797,307 @@ class TradeHistory(object):
         # trades must be sorted:
         self.tlist.sort(key=attrgetter('dtime'), reverse=False)
 
+    def export_to_csv(
+            self, path_or_buf=None, year=None,
+            convert_timezone=True, **kwargs):
+        """Write the list of trades to a csv file.
+
+        The csv table will contain the columns:
+        'kind', 'dtime', 'buy_currency', 'buy_amount', 'sell_currency',
+        'sell_amount', 'fee_currency', 'fee_amount', 'exchange',
+        'mark' and 'comment'.
+
+        :param path_or_buf: string or file handle, default None
+            File path or object, if None is provided the result
+            is returned as a string.
+        :param year: None or 4-digit integer, default: None;
+            Leave `None` to export all trades or choose a specific
+            year to export.
+        :param convert_timezone:
+            string, pytz.timezone, dateutil.tz.tzfile, True or False;
+            All dates will be converted to this timezone. The default
+            value, True, will lead to a conversion to the locale
+            timezone according to the system's locale setting.
+            False keeps all dates at UTC time. Otherwise, specify a
+            parameter that will be forwarded to
+            `pandas.Timestamp.tz_convert()`.
+
+        """
+        df = self.to_data_frame(year=year, convert_timezone=convert_timezone)
+
+        if df.size == 0:
+            log.warning(
+                "Trading history could not be saved. "
+                "There is no data%s." % (
+                    ' for year %i' % year if year else ''))
+            return
+
+        result = df.to_csv(path_or_buf, index=False, **kwargs)
+
+        if path_or_buf is None:
+            return result
+
+        log.info("Saved trading history %sto %s",
+                 'for year %i ' % year if year else '',
+                 str(path_or_buf))
+
+    def to_html(
+            self, year=None, convert_timezone=True, font_size=11,
+            template_file='generic_landscape_table.html',
+            caption="Digital currency trades %(year)s",
+            intro="<h4>Listing of all transactions between "
+                  "%(fromdate)s and %(todate)s</h4>",
+            merge_currencies=True,
+            drop_columns=None, custom_column_names=None,
+            custom_formatters=None, locale=None):
+        """Return the trade history as HTML-formatted string.
+
+        :param year: None or 4-digit integer, default: None;
+            Leave `None` to export all trades or choose a specific
+            year to export.
+        :param convert_timezone:
+            string, pytz.timezone, dateutil.tz.tzfile, True or False;
+            All dates will be converted to this timezone. The default
+            value, True, will lead to a conversion to the locale
+            timezone according to the system's locale setting.
+            False keeps all dates at UTC time. Otherwise, specify a
+            parameter that will be forwarded to
+            `pandas.Timestamp.tz_convert()`.
+        :param template_file: file name of html template inside package
+            folder: `ccgains/templates`.
+            Default: 'generic_landscape_table.html'
+        :param merge_currencies: Boolean, default True;
+            If True, the three currency columns (e.g. 'buy_currency')
+            will be dropped, with the currency names added to the
+            amount columns (e.g. added to 'buy_amount').
+        :param drop_columns: None or list of strings;
+            Column names specified here (as returned from
+            `to_data_frame`) will be omitted from output.
+            If *merge_currencies* is True, don't specify the currency
+            columns here, only the amount column that you want removed.
+        :param custom_column_names: None or list of strings;
+            If None (default), the column names of the DataFrame
+            returned from `to_data_frame()` will be used.
+            To rename them, supply a list of proper length (that is,
+            `11 - len(drop_columns)` if *merge_currencies* is False or
+            `8 -  len(drop_columns)` otherwise).
+        :param custom_formatters: None or dict of one-parameter functions;
+            If None (default), a set of default formatters for each
+            column will be used, using babel.numbers and babel.dates.
+            Individual formatting functions can be supplied with the
+            (renamed) column names as keys. The result of each function
+            must be a unicode string.
+        :param locale: None or locale identifier, e.g. 'de_DE' or 'en_US';
+            The locale used for formatting numeric and date values with
+            babel. If None (default), the locale will be taken from the
+            `LC_NUMERIC` or `LC_TIME` environment variables on your
+            system, for numeric or date values, respectively.
+        :returns:
+            HTML-formatted string
+
+        """
+        import jinja2
+        import babel.numbers, babel.dates
+
+        env = jinja2.Environment(
+                loader=jinja2.PackageLoader('ccgains', 'templates'))
+        template = env.get_template(template_file)
+
+        # Build formatters for all columns:
+
+#        amount_formatter = lambda x: babel.numbers.format_decimal(
+#            x, format=u'#,##0.00000000',
+#            locale=locale if locale else babel.numbers.LC_NUMERIC)
+
+        # The following is a hackish replacement for using
+        # `lambda num: babel.numbers.format_decimal(num, u'#,##0.00000000')`
+        # directly, which we cannot use, since `1E-8` is formatted as
+        #`u'1.E-8,00000000'`. While this bug is being fixed in babel,
+        # we use our own algorithm, copied from
+        # `babel.numbers.NumberPattern.apply`, with a modification:
+        fmt=u'#,##0.00000000'
+        pattern = babel.numbers.parse_pattern(fmt)
+        precision = Decimal('1.' + '1' * pattern.frac_prec[1])
+
+        def my_format_decimal(num, locale):
+            if not isinstance(num, Decimal):
+                num = Decimal(str(num))
+            is_negative = int(num.is_signed())
+            rounded = num.quantize(precision)
+            # this line contains the bugfix:
+            a, sep, b = format(abs(rounded), 'f').partition(".")
+            number = (
+                pattern._format_int(
+                    a, pattern.int_prec[0],
+                    pattern.int_prec[1], locale)
+                + pattern._format_frac(
+                    b or '0', locale, pattern.frac_prec))
+            return u'%s%s%s' % (
+                pattern.prefix[is_negative], number,
+                pattern.suffix[is_negative])
+
+        amount_formatter = lambda x: my_format_decimal(
+            x, locale=locale if locale else babel.numbers.LC_NUMERIC)
+
+        date_formatter = lambda x: babel.dates.format_datetime(
+                x, format='medium',
+                locale=locale if locale else babel.dates.LC_TIME)
+
+        # Get DataFrame:
+        df = self.to_data_frame(year=year, convert_timezone=convert_timezone)
+
+        if merge_currencies:
+            if not drop_columns:
+                drop_columns = []
+            for name in ['buy', 'sell', 'fee']:
+                acol = '%s_amount' % name
+                ccol = '%s_currency' % name
+                if not acol in drop_columns:
+                    df[acol] = (
+                        df[acol].apply(amount_formatter)
+                        + u'\xa0' + df[ccol])
+                if not ccol in drop_columns:
+                    drop_columns.append(ccol)
+
+        if drop_columns:
+            df.drop(drop_columns, axis=1, inplace=True)
+
+        # right-align amount columns:
+        cols_to_align_right = [
+            i + 2 for i, c in enumerate(df.columns)
+            if c in ['%s_amount' % name for name in ['buy', 'sell', 'fee']]]
+
+        # use custom column names:
+        if custom_column_names is not None:
+            renamed = {k:v for k, v in zip(df.columns, custom_column_names)}
+            df.columns = custom_column_names
+        else:
+            renamed = {k:k for k in df.columns}
+
+        # default formatters:
+        if merge_currencies:
+            formatters={
+                'kind': None,
+                'dtime': date_formatter,
+                'buy_amount': None,
+                'sell_amount': None,
+                'fee_amount': None,
+                'exchange': None,
+                'mark': None,
+                'comment': None}
+        else:
+            formatters={
+                'kind': None,
+                'dtime': date_formatter,
+                'buy_currency': None,
+                'buy_amount': amount_formatter,
+                'sell_currency': None,
+                'sell_amount': amount_formatter,
+                'fee_currency': None,
+                'fee_amount': amount_formatter,
+                'exchange': None,
+                'mark': None,
+                'comment': None}
+        # apply renaming and drop dropped columns:
+        formatters = {
+                renamed[k]:v for k, v in formatters.items() if k in renamed}
+        # update with given formatters:
+        if custom_formatters is not None:
+            formatters.update(custom_formatters)
+
+        # start counting rows at 1:
+        df.index = pd.RangeIndex(start=1, stop=len(df) + 1)
+
+        if year is None:
+            fromdate = df[renamed['dtime']].iat[0]
+            todate = df[renamed['dtime']].iat[-1]
+        else:
+            fromdate = babel.dates.date(year=year, month=1, day=1)
+            todate = babel.dates.date(year=year, month=12, day=31)
+        fmtdict = {
+            "year"    : str(year) if year else "",
+            "fromdate": babel.dates.format_date(
+                            fromdate,
+                            locale=locale if locale else babel.dates.LC_TIME),
+            "todate"  : babel.dates.format_date(
+                            todate,
+                            locale=locale if locale else babel.dates.LC_TIME)}
+
+        # Rounding affects the babel.numbers.format_decimal formatter:
+        # We'll floor everything:
+        with babel.numbers.decimal.localcontext(
+            babel.numbers.decimal.Context(
+                rounding=babel.numbers.decimal.ROUND_DOWN)):
+            html = template.render({
+                'today'   : babel.dates.format_date(
+                             babel.dates.date.today(),
+                             locale=locale if locale else babel.dates.LC_TIME),
+                'fontsize': font_size,
+                'caption' : caption % fmtdict,
+                'intro'   : intro % fmtdict,
+                'table'   : df.to_html(
+                                index=True, bold_rows=False,
+                                classes='align-right-columns',
+                                formatters=formatters),
+                'cols_to_align_right': cols_to_align_right})
+
+        return html
+
+    def export_to_pdf(
+            self, file_name, year=None, convert_timezone=True,
+            font_size=11, template_file='generic_landscape_table.html',
+            caption="Digital currency trades %(year)s",
+            intro="<h4>Listing of all transactions between "
+                  "%(fromdate)s and %(todate)s</h4>",
+            drop_columns=None, custom_column_names=None,
+            custom_formatters=None, locale=None):
+        """Export the trade history to a pdf file.
+
+        :param file_name: string;
+            Destination file name.
+        :param year: None or 4-digit integer, default: None;
+            Leave `None` to export all trades or choose a specific
+            year to export.
+        :param convert_timezone:
+            string, pytz.timezone, dateutil.tz.tzfile, True or False;
+            All dates will be converted to this timezone. The default
+            value, True, will lead to a conversion to the locale
+            timezone according to the system's locale setting.
+            False keeps all dates at UTC time. Otherwise, specify a
+            parameter that will be forwarded to
+            `pandas.Timestamp.tz_convert()`.
+        :param template_file: file name of html template inside package
+            folder: `ccgains/templates`.
+            Default: 'generic_landscape_table.html'
+        :param drop_columns: None or list of strings;
+            Column names specified here (as returned from
+            `to_data_frame`) will be omitted from output.
+        :param custom_column_names: None or list of strings;
+            If None (default), the column names of the DataFrame
+            returned from `to_data_frame()` will be used.
+            To rename them, supply a list of length 11-len(*drop_columns*).
+        :param custom_formatters: None or dict of one-parameter functions;
+            If None (default), a set of default formatters for each
+            column will be used, using babel.numbers and babel.dates.
+            Individual formatting functions can be supplied with the
+            (renamed) column names as keys. The result of each function
+            must be a unicode string.
+        :param locale: None or locale identifier, e.g. 'de_DE' or 'en_US';
+            The locale used for formatting numeric and date values with
+            babel. If None (default), the locale will be taken from the
+            `LC_NUMERIC` or `LC_TIME` environment variables on your
+            system, for numeric or date values, respectively.
+
+        """
+        import weasyprint
+        html = self.to_html(
+                year=year,
+                convert_timezone=convert_timezone,
+                font_size=font_size, template_file=template_file,
+                caption=caption, intro=intro,
+                drop_columns=drop_columns,
+                custom_column_names=custom_column_names,
+                custom_formatters=custom_formatters,
+                locale=locale)
+        doc = weasyprint.HTML(string=html)
+        doc.write_pdf(file_name)

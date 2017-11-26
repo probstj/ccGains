@@ -2,7 +2,7 @@
 <html>
     <head>
         <meta charset="UTF-8">
-        <title>Capital gains report {{ year }} - created by ccGains</title>
+        <title>{{ caption }} - created by ccGains</title>
         <style type="text/css">
             table tr td, table tr th {
                 border: 1px solid #ccc;
@@ -29,11 +29,9 @@
                 background: whitesmoke;
             }
 
-            .align-right-columns td:nth-child(3),
-            .align-right-columns td:nth-child(8),
-            .align-right-columns td:nth-child(9),
-            .align-right-columns td:nth-child(10),
-            .align-right-columns td:nth-child(11)
+            {% for c in cols_to_align_right -%}
+            .align-right-columns td:nth-child({{ c }}){{ "," if not loop.last }}
+            {% endfor -%}
             {
               text-align: right;
             }
@@ -70,9 +68,15 @@
                     @bottom-right {
                         content: counter(page) " / " counter(pages);
                     }
+                    @top-center {
+                        content: string(heading, first-except);
+                    }
+                    @top-right {
+                        content: "{{ today }}";
+                    }
                 }
-
             }
+            h2 { string-set: heading content() }
 
         </style>
     </head>
@@ -80,7 +84,7 @@
         <div class="landscape">
             <h2>{{ caption }}</h2>
             <div>{{ intro }}</div>
-            {{ cgtable }}
+            {{ table }}
         </div>
 
     </body>
