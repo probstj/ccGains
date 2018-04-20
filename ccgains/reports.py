@@ -123,7 +123,8 @@ class CapitalGainsReport(object):
         self.data.append(payment_report)
 
     def get_report_data(self, year=None, date_precision='D', combine=True,
-            convert_timezone=True, strip_timezone=True, extended=False):
+            convert_timezone=True, strip_timezone=True, extended=False,
+            custom_column_names=None):
         """Return a pandas.DataFrame listing the capital gains made
         with the processed trades.
 
@@ -156,9 +157,9 @@ class CapitalGainsReport(object):
             all dates.
         :param extended: boolean, default False:
             By default, the returned DataFrame contains the columns:
-                ['kind', 'amount', 'currency', 'purchase_date',
-                'sell_date', 'exchange', 'short_term',
-                'cost', 'proceeds', 'profit'].
+                ['kind', 'bag_spent', 'currency', 'bag_date',
+                 'sell_date', 'exchange', 'short_term',
+                 'spent_cost', 'proceeds', 'profit'];
             If *extended* is True, these columns will be returned:
                 ['kind', 'exchange', 'sell_date',
                 'currency', 'to_pay','fee_ratio',
@@ -166,9 +167,12 @@ class CapitalGainsReport(object):
                 'cost_currency', 'spent_cost', 'short_term',
                 'ex_rate', 'proceeds', 'profit',
                 'buy_currency, buy_ratio']
-            Note the renaming of columns in the small dataset:
-                'bag_spent'->'amount', 'bag_date'->'purchase_date' and
-                'spent_cost'->'cost'.
+            Note the reordering of columns in the small dataset.
+        :param custom_column_names: None or list of strings;
+            If None (default), the column names will be as described
+            above, depending on *extended*. To rename them, supply a
+            list of proper length, either 10 if not *extended or 17
+            otherwise.
         :returns: A pandas.DataFrame with the requested data.
 
         """
@@ -224,19 +228,16 @@ class CapitalGainsReport(object):
             # Revert column order:
             df = df.reindex_axis(cols, axis=1)
 
-        # rename some columns, so the small dataset makes more sense:
-        if not extended:
-            df.columns = pd.Index(
-                ['kind', 'amount', 'currency', 'purchase_date',
-                 'sell_date', 'exchange', 'short_term',
-                 'cost', 'proceeds', 'profit'])
+        # rename columns:
+        if custom_column_names:
+            df.columns = pd.Index(custom_column_names)
 
         return df
 
     def export_short_report_to_csv(
             self, path_or_buf=None, year=None, date_precision='D',
             combine=True, convert_timezone=True, strip_timezone=True,
-            **kwargs):
+            custom_column_names=None, **kwargs):
         """Write the capital gains table to a csv file.
 
         The csv table will contain the columns:
@@ -273,15 +274,26 @@ class CapitalGainsReport(object):
         :param strip_timezone: boolean, default True;
             After conversion, the timezone info will be removed from
             all dates.
+        :param custom_column_names: None or list of strings;
+            If None (default), the column names will be:
+            ['kind', 'amount', 'currency', 'purchase_date', 'sell_date',
+            'exchange', 'short_term', 'cost', 'proceeds', 'profit'].
+            To rename them, supply a list of length 10.
 
         """
+        if custom_column_names is None:
+            custom_column_names=[
+                'kind', 'amount', 'currency', 'purchase_date',
+                'sell_date', 'exchange', 'short_term',
+                'cost', 'proceeds', 'profit']
         df = self.get_report_data(
                 year=year,
                 date_precision=date_precision,
                 combine=combine,
                 convert_timezone=convert_timezone,
                 strip_timezone=strip_timezone,
-                extended=False)
+                extended=False,
+                custom_column_names=custom_column_names)
 
         if df.size == 0:
             log.warning(
@@ -305,7 +317,7 @@ class CapitalGainsReport(object):
         if path_or_buf is None:
             return result
 
-        log.info("Saved capital gains report %sto %s",
+        log.info("Exported capital gains report data %sto %s",
                  'for year %i ' % year if year else '',
                  str(path_or_buf))
 
@@ -314,7 +326,7 @@ class CapitalGainsReport(object):
             convert_timezone=True, font_size=12,
             template_file='shortreport_en.html',
             custom_column_names=None, custom_formatters=None,
-            locale=None):
+            locale=None, extended_data=False):
         """Return the capital gains report as HTML-formatted string.
 
         :param year: None or 4-digit integer, default: None;
@@ -345,8 +357,9 @@ class CapitalGainsReport(object):
             folder: `ccgains/templates`. Default: 'shortreport_en.html'
         :param custom_column_names: None or list of strings;
             If None (default), the column names of the DataFrame
-            returned from `get_report_data(extended=False)` will be
-            used. To rename them, supply a list of length 10.
+            returned from `get_report_data(extended=extended_data)`
+            will be used. To rename them, supply a list with same length
+            than number of columns (depending on *extended_data*).
         :param custom_formatters: None or dict of one-parameter functions;
             If None (default), a set of default formatters for each
             column will be used, using babel.numbers and babel.dates.
@@ -358,6 +371,11 @@ class CapitalGainsReport(object):
             babel. If None (default), the locale will be taken from the
             `LC_NUMERIC` or `LC_TIME` environment variables on your
             system, for numeric or date values, respectively.
+        :param extended_data: Boolean, default: False;
+            If the *template_file* makes use of some of the extended data
+            returned from `get_report_data` when called with parameter
+            `extended=True`, this must also be True. See documentation
+            of `get_report_data` for extended data fields.
         :returns:
             HTML-formatted string
 
@@ -365,14 +383,14 @@ class CapitalGainsReport(object):
 
         env = jinja2.Environment(
                 loader=jinja2.PackageLoader('ccgains', 'templates'))
-        template = env.get_template(template_file)
+
         df = self.get_report_data(
                 year=year,
                 date_precision=date_precision, combine=combine,
                 convert_timezone=convert_timezone,
                 # Don't strip timezone, will be handled by formatters:
                 strip_timezone=False,
-                extended=False)
+                extended=extended_data)
 
         total_profit = df['profit'].sum()
         # taxable profit is zero if long_term:
@@ -443,18 +461,29 @@ class CapitalGainsReport(object):
         # default formatters:
         formatters={
             renamed['kind']: lambda x: x.capitalize(),
-            renamed['amount']: amount_formatter,
+            renamed['bag_spent']: amount_formatter,
             renamed['currency']: None,
-            renamed['purchase_date']: date_formatter,
+            renamed['bag_date']: date_formatter,
             renamed['sell_date']: date_formatter,
             renamed['exchange']: None,
             renamed['short_term']: lambda b: ['no', 'yes'][b],
-            renamed['cost']: price_formatter,
+            renamed['spent_cost']: price_formatter,
             renamed['proceeds']: price_formatter,
             renamed['profit']: price_formatter}
         # update with given formatters:
         if custom_formatters is not None:
             formatters.update(custom_formatters)
+
+        # Add some formatters to Jinja environment, so they can be
+        # used in the template:
+        env.filters['format_currency'] = babel.numbers.format_currency
+        env.filters['format_base_currency'] = price_formatter
+        env.filters['format_percent'] = babel.numbers.format_percent
+        env.filters['format_decimal'] = babel.numbers.format_decimal
+        env.filters['format_amount'] = amount_formatter
+        env.filters['format_date'] = babel.dates.format_date
+        env.filters['format_datetime'] = babel.dates.format_datetime
+        env.filters['format_adapted_date'] = date_formatter
 
         # start counting rows at 1:
         df.index = pd.RangeIndex(start=1, stop=len(df) + 1)
@@ -465,6 +494,8 @@ class CapitalGainsReport(object):
         else:
             fromdate = babel.dates.date(year=year, month=1, day=1)
             todate = babel.dates.date(year=year, month=12, day=31)
+
+        template = env.get_template(template_file)
 
         # Rounding affects the babel.numbers.format_... formatters:
         # We'll floor everything:
@@ -494,7 +525,11 @@ class CapitalGainsReport(object):
                         price_formatter(short_term_profit),
                 "num_trades":
                         len(df),
-                'cgtable':
+                "sales_data":
+                        df,
+                "formatters":
+                        formatters,
+                "cgtable":
                         df.to_html(
                             index=True, bold_rows=False,
                             classes='align-right-columns',
@@ -564,11 +599,16 @@ class CapitalGainsReport(object):
                 locale=locale)
         doc = weasyprint.HTML(string=html)
         doc.write_pdf(file_name)
+        log.info("Saved short capital gains report %sto %s",
+                 'for year %i ' % year if year else '',
+                 str(file_name))
 
     def get_extended_report_html(
             self, year=None, date_precision='D', combine=True,
-            convert_timezone=True, strip_timezone=True,
-            font_size=10, template_file='fullreport_de.html'):
+            convert_timezone=True, font_size=10,
+            template_file='fullreport_de.html',
+            payment_kind_translation=None,
+            locale=None):
         """Return an extended capital gains report as HTML-formatted
         string.
 
@@ -598,32 +638,43 @@ class CapitalGainsReport(object):
             forwarded to pandas.Timestamp.tz_convert().
         :param template_file: file name of html template inside package
             folder: `ccgains/templates`. Default: 'fullreport_de.html'
+        :param payment_kind_translation: None (default) or dictionary;
+            This allows for the payment kind (one out of
+            ['sale', 'withdrawal fee', 'deposit fee', 'exchange fee'])
+            to be translated (the dict keys must be the mentioned english
+            strings, the values are the translations used in the output).
+        :param locale: None or locale identifier, e.g. 'de_DE' or 'en_US';
+            The locale used for formatting numeric and date values with
+            babel. If None (default), the locale will be taken from the
+            `LC_NUMERIC` or `LC_TIME` environment variables on your
+            system, for numeric or date values, respectively.
         :returns:
             HTML-formatted string
 
         """
-        env = jinja2.Environment(
-                loader=jinja2.PackageLoader('ccgains', 'templates'),
-                autoescape=jinja2.select_autoescape(['html', 'xml']))
-        env.filters['format_currency'] = babel.numbers.format_currency
-        env.filters['format_percent'] = babel.numbers.format_percent
-        env.filters['format_decimal'] = babel.numbers.format_decimal
-        template = env.get_template(template_file)
-        df = self.get_report_data(
+        if payment_kind_translation is not None:
+            custom_formatter = {
+                'kind': lambda x: payment_kind_translation[x]}
+        else:
+            custom_formatter = None
+        return self.get_report_html(
                 year=year,
-                date_precision=date_precision, combine=combine,
+                date_precision=date_precision,
+                combine=combine,
                 convert_timezone=convert_timezone,
-                strip_timezone=strip_timezone,
-                extended=True)
-        return template.render({
-            'year': year if year else '',
-            'fontsize': font_size,
-            'sales_data': df})
+                font_size=font_size,
+                template_file=template_file,
+                custom_column_names=None,
+                custom_formatters=custom_formatter,
+                locale=locale,
+                extended_data=True)
 
     def export_extended_report_to_pdf(
             self, file_name, year=None, date_precision='D', combine=True,
-            convert_timezone=True, strip_timezone=True,
-            font_size=10, template_file='fullreport_de.html'):
+            convert_timezone=True, font_size=10,
+            template_file='fullreport_en.html',
+            payment_kind_translation=None,
+            locale=None):
         """Export the extended capital gains report to a pdf file.
 
         :param file_name: string;
@@ -654,13 +705,28 @@ class CapitalGainsReport(object):
             forwarded to pandas.Timestamp.tz_convert().
         :param template_file: file name of html template inside package
             folder: `ccgains/templates`. Default: 'fullreport_de.html'
+        :param payment_kind_translation: None (default) or dictionary;
+            This allows for the payment kind (one out of
+            ['sale', 'withdrawal fee', 'deposit fee', 'exchange fee'])
+            to be translated (the dict keys must be the mentioned english
+            strings, the values are the translations used in the output).
+        :param locale: None or locale identifier, e.g. 'de_DE' or 'en_US';
+            The locale used for formatting numeric and date values with
+            babel. If None (default), the locale will be taken from the
+            `LC_NUMERIC` or `LC_TIME` environment variables on your
+            system, for numeric or date values, respectively.
 
         """
         html = self.get_extended_report_html(
                 year=year,
                 date_precision=date_precision, combine=combine,
                 convert_timezone=convert_timezone,
-                strip_timezone=strip_timezone,
-                font_size=font_size, template_file=template_file)
+                font_size=font_size, template_file=template_file,
+                payment_kind_translation=payment_kind_translation,
+                locale=locale)
         doc = weasyprint.HTML(string=html)
         doc.write_pdf(file_name)
+        log.info("Saved detailed capital gains report %sto %s",
+                 'for year %i ' % year if year else '',
+                 str(file_name))
+

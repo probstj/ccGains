@@ -115,39 +115,43 @@
         </style>
     </head>
     <body>
-        <h2>Berechnung der Gewinne aus privaten Veräußerungsgeschäften {{ year }}</h2>
-        <h3>aus dem Handel mit digitalen Währungen</h3>
+        <h2>Detailed calculation of capital gains {{ year }}</h2>
+        <h3>for trades with digital currencies</h3>
         <br>
             <div class="summary">
                 <table border="1" class="dataframe">
                   <thead>
-                    <tr><th>Zusammenfassung</th><th></th></tr>
+                    <tr><th>Summary</th><th></th></tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <th>Zeitraum</th>
-                      <td>von {{ fromdate }} bis {{ todate }}</td>
+                      <th>Period</th>
+                      <td>{{ fromdate }} to {{ todate }}</td>
                     </tr>
                     <tr>
-                      <th>Gesamter Gewinn <br>(aus Verkäufen von Währungen in Besitz kürzer 1 Jahr) </th>
+                      <th>Total profit (long and short term) </th>
+                      <td>{{ total_profit }}</td>
+                    </tr>
+                    <tr>
+		              <th>Short term profit<br>(for currencies in possession less than a year) </th>
                       <td>{{ short_term_profit }}</td>
                     </tr>
                     <tr>
-                      <th>Anzahl Veräußerungen (unten aufgeführt)</th>
+                      <th>Number of trades (listed below)</th>
                       <td>{{ num_trades }}</td>
                     </tr>
                   </tbody>
                 </table>
                 <br>
             </div>
-            <h4>Auflistung aller Zahlungen mit digitalen Währungen und Berechnung der daraus erzielten Gewinne oder Verluste</h4>
+            <h4>Listing of all trades made with digital currencies including calculation of gains and losses</h4>
 
         {% set vars = {'total': 0} %}
         {% for sale in sales_data.itertuples() %}
         <div class="saleblock">
             <p class="salehead">
                 <span style="float: right">#{{ loop.index }}</span>
-                <strong>{{ formatters["kind"](sale.kind) }} am {{ sale.sell_date|format_adapted_date }}</strong>
+                <strong>{{ formatters["kind"](sale.kind) }} on {{ sale.sell_date|format_adapted_date }}</strong>
             </p>
             <div class="salereport">
                 {# amount of other currency bought in this sale: #}
@@ -160,61 +164,61 @@
                 {% set prof = corrproc - sale.spent_cost %}
                 {% set _ = vars.update({'total': vars['total'] + prof}) %}
                 <p>
-                    Verkauf von <strong>{{ sale.to_pay|format_amount }} {{ sale.currency }}</strong>
-                    (davon <strong>{{ (sale.fee_ratio * 100)|round(3)|format_decimal }}% </strong> Gebühren)
+                    Sold <strong>{{ sale.to_pay|format_amount }} {{ sale.currency }}</strong>
+                    (of which <strong>{{ (sale.fee_ratio * 100)|round(3)|format_decimal }}% </strong> are fees)
                     {% if sale.buy_currency %}
-                    für <strong>{{ buy_amount|format_amount }} {{ sale.buy_currency }}</strong>
+                    for <strong>{{ buy_amount|format_amount }} {{ sale.buy_currency }}</strong>
                     {% endif %}
-                    bei <strong>{{ sale.exchange }}</strong>
+                    on <strong>{{ sale.exchange }}</strong>
                 </br>
-                    Verwende Kaufmenge erworben am <strong>{{ sale.bag_date|format_adapted_date }}</strong>;
-                    Inhalt der Kaufmenge: <strong>{{ sale.bag_amount }} {{ sale.currency }}</strong>
+                    Using currency bundle purchased on <strong>{{ sale.bag_date|format_adapted_date }}</strong>;
+                    Bundle's contents: <strong>{{ sale.bag_amount }} {{ sale.currency }}</strong>
                 </p>
                 <table>
                     <tbody>
                         <tr>
-                            <td>Erwerbskosten der Kaufmenge:</td>
+                            <td>Bundle's purchase cost:</td>
                             <td>
                                 <strong>{{ sale.spent_cost|format_base_currency }}</strong>
                             </td>
-                            <td>(Preis: {{ (sale.spent_cost / sale.bag_spent)|format_amount }} {{ sale.cost_currency }} / {{ sale.currency }})</td>
+                            <td>(price: {{ (sale.spent_cost / sale.bag_spent)|format_amount }} {{ sale.cost_currency }} / {{ sale.currency }})</td>
                         </tr>
                         <tr>
-                            <td>Erlös:</td>
+                            <td>Proceeds:</td>
                             <td>{{ proc|format_base_currency }}</td>
-                            <td>(Preis: {{ sale.ex_rate|format_amount }} {{ sale.cost_currency }} / {{ sale.currency }})</td>
+                            <td>(price: {{ sale.ex_rate|format_amount }} {{ sale.cost_currency }} / {{ sale.currency }})</td>
                         </tr>
                         <tr>
-                            <td>Erlös abzgl. Gebühren:</td>
+                            <td>Proceeds minus fees:</td>
                             <td>
                                 <strong>{{ corrproc|format_base_currency }}</strong>
                             </td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td>Gewinn:</td>
+                            <td>Profit:</td>
                             <td>
                                 <strong>{{ prof|format_base_currency }}</strong>
                             </td>
-                            <td>{% if prof < 0 %}(Verlust){% endif %}</td>
+                            <td>{% if prof < 0 %}(loss){% endif %}</td>
                         </tr>
                         <tr>
-                            <td>Zu versteuern:</td>
+                            <td>Taxable:</td>
                             {% if sale.short_term %}
-                            <td>Ja</td>
-                            <td>(In Besitz kürzer als ein Jahr)</td>
+                            <td>Yes</td>
+                            <td>(in possession for less than a year)</td>
                             {% else %}
-                            <td>Nein</td>
-                            <td>(In Besitz länger als ein Jahr)</td>
+                            <td>No</td>
+                            <td>(in possession for more than a year)</td>
                             {% endif%}
                         </tr>
                     </tbody>
                 </table>
                 <p>
-                    Inhalt der Kaufmenge nach dem Verkauf: <strong>{{ (sale.bag_amount - sale.bag_spent)|format_amount }} {{ sale.currency }}</strong>;
-                    Verbleibt zu bezahlen mit nächster Kaufmenge: <strong>{{ (sale.to_pay - sale.bag_spent)|format_amount }} {{ sale.currency }}</strong>
+                    Bundle's contents after sale: <strong>{{ (sale.bag_amount - sale.bag_spent)|format_amount }} {{ sale.currency }}</strong>;
+                    Remaining to be paid using next bundle: <strong>{{ (sale.to_pay - sale.bag_spent)|format_amount }} {{ sale.currency }}</strong>
                     <br/>
-                    Summe zu versteuernder Gewinn {{ year }}: <strong>{{ vars['total']|format_base_currency }}</strong>
+                    Total taxable gains {{ year }}: <strong>{{ vars['total']|format_base_currency }}</strong>
                 <p/>
 
             </div>
