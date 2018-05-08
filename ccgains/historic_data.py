@@ -119,6 +119,9 @@ class HistoricDataCSV(HistoricData):
         second the rate given in *unit*, third the amount traded.
         (Such a csv can be downloaded from bitcoincharts.com)
 
+        The file may also be compressed and will be deflated on-the-fly;
+        allowed extensions are: '.gz', '.bz2', '.zip' or '.xz'.
+
         The data will be resampled by calculating the weighted price
         for interval steps specified by *interval*. See:
         http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
@@ -225,6 +228,9 @@ class HistoricDataAPI(HistoricData):
         self.command = 'returnTradeHistory'
         self.currency_pair = '{0.cto:s}_{0.cfrom:s}'.format(self)
         self.last_query_time = pd.Timestamp.now()
+        self.connection_error = requests.ConnectionError(
+            'Price data for %s could not be loaded from %s '
+            '- are you online?' % (self.currency_pair, self.url))
         file_name = path.join(
             cache_folder,
             'Poloniex_{0.cto:s}_{0.cfrom:s}_{0.interval:s}.h5'.format(self))
@@ -243,9 +249,12 @@ class HistoricDataAPI(HistoricData):
             self.currency_pair = '{0.cto:s}_{0.cfrom:s}'.format(self)
         else:
             # Query the api to see if the pair is available:
-            req = requests.get(
-                self.url,
-                params={'command' : 'returnTicker'})
+            try:
+                req = requests.get(
+                    self.url,
+                    params={'command' : 'returnTicker'})
+            except requests.ConnectionError:
+                raise self.connection_error
             if self.currency_pair in req.json():
                 self.file_name = file_name
             else:
@@ -295,12 +304,15 @@ class HistoricDataAPI(HistoricData):
             sleep(self.query_wait_time - delta)
             log.info('continuing')
         # Make request:
-        req = requests.get(
+        try:
+            req = requests.get(
                 self.url,
                 params={'command': self.command,
                         'currencyPair': self.currency_pair,
                         'start': int(start),
                         'end': int(end)})
+        except requests.ConnectionError:
+            raise self.connection_error
         log.info('Fetched historical price data with request: %s', req.url)
         try:
             df = pd.read_json(

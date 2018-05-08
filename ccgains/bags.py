@@ -384,6 +384,9 @@ class BagFIFO(object):
                 dest.append(bag)
                 del src[i]
                 to_move -= bag.amount
+                if i == len(src):
+                    # No more usable bags left in src
+                    return to_move
             else:
                 # We need to split the bag:
                 spent, cost, _ = bag.spend(to_move)

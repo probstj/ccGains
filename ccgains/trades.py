@@ -556,6 +556,8 @@ class TradeHistory(object):
             plocs = TPLOC_POLONIEX_TRADES
 
         if plocs == TPLOC_POLONIEX_TRADES and condense_trades:
+            # special loading of trades if they need to be condensed
+
             with open(file_name) as f:
                 csvlines = f.readlines()
 
@@ -577,7 +579,7 @@ class TradeHistory(object):
                 if groupid == trade.comment:
                     grouplist.append(trade)
                 if groupid != trade.comment or i == num - 1:
-                    # merge trades in grouplist with latest one:
+                    # time to merge trades in grouplist and place in tlist
                     grouplist.sort(key=attrgetter('dtime'), reverse=True)
                     last = grouplist[0]
                     for t in grouplist[1:]:
@@ -599,20 +601,31 @@ class TradeHistory(object):
                     # add consolidated trade to self.tlist:
                     self.tlist.append(last)
                     # reset groupslist:
-                    if i < num - 1:
-                        grouplist = [trade]
-                        groupid = trade.comment
-
+                    if groupid != trade.comment:
+                        if i < num - 1:
+                            # current trade did not match,
+                            # but might match next trade:
+                            grouplist = [trade]
+                            groupid = trade.comment
+                        else:
+                            # this was the last trade and did not match:
+                            self.tlist.append(trade)
+                            grouplist = []
+                            groupid = None
                     else:
+                        # this was the last trade but was already included
+                        # and merged with grouplist:
                         grouplist = []
                         groupid = None
 
             log.info("Loaded %i transactions from %s",
                      len(self.tlist) - numtrades, file_name)
+
             # trades must be sorted:
             self.tlist.sort(key=attrgetter('dtime'), reverse=False)
             return
         else:
+            # normal loading, using the proper plocs:
             return self.append_csv(
                 file_name=file_name,
                 param_locs=plocs,
@@ -785,7 +798,7 @@ class TradeHistory(object):
             if (tlist[i].kind == 'Network fee'
                     and tlist[i - 1].comment == tlist[i].comment):
                 tlist[i - 1].sellval += tlist[i].sellval
-                tlist[i - 1].feeval += tlist[i].feeval
+                tlist[i - 1].feeval += tlist[i].sellval
 
                 del tlist[i]
             else:
@@ -1101,3 +1114,6 @@ class TradeHistory(object):
                 locale=locale)
         doc = weasyprint.HTML(string=html)
         doc.write_pdf(file_name)
+        log.info("Saved trading history %sto %s",
+                 'for year %i ' % year if year else '',
+                 str(file_name))
