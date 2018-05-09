@@ -4,10 +4,15 @@
 examples/*
 # except the actual examples:
 !examples/*.py
+# and except the example_csv folder:
+!examples/example_csv
+# and except the example_output folder:
+!examples/example_output
 
 # nothing in data folder
-# (so far. need to check copyright issues if I may add data from bitcoincharts.com)
 data/*
+# except the abridged btc rates file used in the example:
+!data/bitcoin_de_EUR_abridged_for_example.csv.gz
 
 # vim temporary file
 *~

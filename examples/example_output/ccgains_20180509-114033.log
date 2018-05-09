@@ -1,0 +1,463 @@
+INFO    : Loaded 2 transactions from ./example_csv/bitcoin.de_account_statement_2017_fabricated.csv
+INFO    : Loaded 2 transactions from ./example_csv/poloniex_depositHistory_2017_fabricated.csv
+INFO    : Loaded 8 transactions from ./example_csv/poloniex_tradeHistory_2017_fabricated.csv
+WARNING : Poloniex does not include withdrawal fees in exported csv-files. Please include the fees manually, or call `add_missing_transaction_fees` after transactions from all relevant exchanges were imported.
+INFO    : Loaded 1 transactions from ./example_csv/poloniex_withdrawalHistory_2017_fabricated.csv
+WARNING : Bitsquare/Bisq does not include withdrawal fees in exported csv-files. Please include the fees manually, or call `add_missing_transaction_fees` after transactions from all relevant exchanges were imported.
+INFO    : Loaded 6 transactions from ./example_csv/bisq_trades_2017_fabricated.csv and ./example_csv/bisq_transactions_2017_fabricated.csv
+INFO    : amended withdrawal: Withdrawal on 2017-02-12 16:23:05+00:00: Acquired 0.00000000 , disposed of 0.02010000 BTC for a fee of 0.00010000 BTC on Poloniex [1B6QTS4jbhRrqi23Puy9zF0nfVEapZtgNM]
+INFO    : amended withdrawal: Withdrawn from wallet on 2017-02-16 16:38:03+00:00: Acquired 0.00000000 , disposed of 0.21900000 BTC for a fee of 0.00050000 BTC on Bitsquare/Bisq [Sent to: 14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW]
+INFO    : Saved trading history for year 2017 to transactions2017.csv
+INFO    : Saved trading history for year 2017 to Transactions2017.pdf
+INFO    : TRADE #1
+INFO    : Purchase on 2017-02-06 16:04:03+00:00: Acquired 0.19800000 BTC, disposed of 194.80000000 EUR for a fee of 0.00100000 BTC on Bitcoin.de [AABBCC]
+INFO    : Processing trade: Purchase, 2017-02-06 16:04:03+00:00, BTC, 0.19800000, EUR, 194.80000000, BTC, 0.00100000, Bitcoin.de, , AABBCC
+INFO    : Buying 0.19800000 BTC for 194.80000000 EUR at Bitcoin.de (2017-02-06 16:04:03+00:00)
+INFO    : State of bags: 
+          exchange                      date currency      amount costcur          cost         price
+    id                                                                                               
+    1   Bitcoin.de 2017-02-06 16:04:03+00:00      BTC  0.19800000     EUR  194.80000000  983.83838384
+
+INFO    : Totals: {'Bitcoin.de': {'BTC': Decimal('0.19800000')}}
+INFO    : Gains: EUR 0.000000000000
+
+INFO    : TRADE #2
+INFO    : Disbursement on 2017-02-09 23:37:45+00:00: Acquired 0.00000000 EUR, disposed of 0.19800000 BTC for a fee of 0.00010000 BTC on Bitcoin.de [7bf9065a97b8d0cac275474297bf0e7463d8ba82edc267293ed04f9100851a01]
+INFO    : Processing trade: Disbursement, 2017-02-09 23:37:45+00:00, EUR, 0.00000000, BTC, 0.19800000, BTC, 0.00010000, Bitcoin.de, , 7bf9065a97b8d0cac275474297bf0e7463d8ba82edc267293ed04f9100851a01
+INFO    : Withdrawing 0.19800000 BTC from Bitcoin.de (2017-02-09 23:37:45+00:00, fee: 0.00010000 BTC)
+INFO    : Paying 0.00010000 BTC from Bitcoin.de (including 0.00010000 BTC fees)
+INFO    : Paying with bag from 2017-02-06 16:04:03+00:00, containing 0.19800000 BTC
+INFO    : Contents of bag after payment: 0.19790000 BTC (spent 0.00010000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 0.098 EUR (Price 983.83838384 EUR/BTC)
+    Proceeds         : 0.093 EUR (Price 930.41892908 EUR/BTC)
+    Proceeds w/o fees: 0.000 EUR
+    Profit           : -0.098 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Taxable loss due to fees: -0.098 EUR
+INFO    : State of bags: 
+            exchange                      date currency      amount costcur          cost         price
+    id                                                                                                 
+    1   <in_transit> 2017-02-06 16:04:03+00:00      BTC  0.19790000     EUR  194.70161616  983.83838384
+
+INFO    : Totals: {'in_transit': {'BTC': Decimal('0.19790000')}}
+INFO    : Gains: EUR -0.098383838384
+
+INFO    : TRADE #3
+INFO    : Deposit on 2017-02-10 23:47:28+00:00: Acquired 0.19790000 BTC, disposed of 0.00000000  for a fee of 0.00000000  on Poloniex [14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW]
+INFO    : Processing trade: Deposit, 2017-02-10 23:47:28+00:00, BTC, 0.19790000, , 0.00000000, , 0.00000000, Poloniex, , 14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW
+INFO    : Depositing 0.19790000 BTC at Poloniex (2017-02-10 23:47:28+00:00, fee: 0.00000000 )
+INFO    : State of bags: 
+        exchange                      date currency      amount costcur          cost         price
+    id                                                                                             
+    1   Poloniex 2017-02-06 16:04:03+00:00      BTC  0.19790000     EUR  194.70161616  983.83838384
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.19790000')}}
+INFO    : Gains: EUR -0.098383838384
+
+INFO    : TRADE #4
+INFO    : Exchange on 2017-02-11 20:21:21+00:00: Acquired 16.26497244 XMR, disposed of 0.19790000 BTC for a fee of 0.02443410 XMR on Poloniex (Buy) [119073300001]
+INFO    : Processing trade: Exchange, 2017-02-11 20:21:21+00:00, XMR, 16.26497244, BTC, 0.19790000, XMR, 0.02443410, Poloniex, Buy, 119073300001
+INFO    : Selling 0.19790000 BTC for 16.26497244 XMR at Poloniex (2017-02-11 20:21:21+00:00, fee: 0.02443410 XMR)
+INFO    : Paying 0.19790000 BTC from Poloniex (including 0.00029685 BTC fees)
+INFO    : Paying with bag from 2017-02-06 16:04:03+00:00, containing 0.19790000 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.19790000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 194.702 EUR (Price 983.83838384 EUR/BTC)
+    Proceeds         : 191.250 EUR (Price 966.39648012 EUR/BTC)
+    Proceeds w/o fees: 190.963 EUR
+    Profit           : -3.739 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+        exchange                      date currency       amount costcur          cost        price
+    id                                                                                             
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR  16.26497244     EUR  190.96298874  11.74075083
+
+INFO    : Totals: {'Poloniex': {'XMR': Decimal('16.26497244')}}
+INFO    : Gains: EUR -3.837011263578
+
+INFO    : TRADE #5
+INFO    : Exchange on 2017-02-12 16:08:11+00:00: Acquired 0.12331475 BTC, disposed of 10.00000000 XMR for a fee of 0.00018525 BTC on Poloniex (Sell) [119488400001]
+INFO    : Processing trade: Exchange, 2017-02-12 16:08:11+00:00, BTC, 0.12331475, XMR, 10.00000000, BTC, 0.00018525, Poloniex, Sell, 119488400001
+INFO    : Selling 10.00000000 XMR for 0.12331475 BTC at Poloniex (2017-02-12 16:08:11+00:00, fee: 0.00018525 BTC)
+INFO    : Fetched historical price data with request: https://poloniex.com/public?start=1486857600&end=1486944000&command=returnTradeHistory&currencyPair=BTC_XMR
+INFO    : Successfully fetched 8425 trades
+INFO    : Paying 10.00000000 XMR from Poloniex (including 0.01500000 XMR fees)
+INFO    : Paying with bag from 2017-02-11 20:21:21+00:00, containing 16.26497244 XMR
+INFO    : Contents of bag after payment: 6.26497244 XMR (spent 10.00000000 XMR)
+INFO    : Profits in this transaction:
+    Original bag cost: 117.408 EUR (Price 11.74075083 EUR/XMR)
+    Proceeds         : 117.328 EUR (Price 11.73277839 EUR/XMR)
+    Proceeds w/o fees: 117.152 EUR
+    Profit           : -0.256 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+        exchange                      date currency      amount costcur          cost         price
+    id                                                                                             
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR   73.55548040   11.74075083
+    3   Poloniex 2017-02-12 16:08:11+00:00      BTC  0.12331475     EUR  117.15179226  950.02254202
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.12331475'), 'XMR': Decimal('6.26497244')}}
+INFO    : Gains: EUR -4.092727338283
+
+INFO    : TRADE #6
+INFO    : Withdrawal on 2017-02-12 16:23:05+00:00: Acquired 0.00000000 , disposed of 0.02010000 BTC for a fee of 0.00010000 BTC on Poloniex [1B6QTS4jbhRrqi23Puy9zF0nfVEapZtgNM]
+INFO    : Processing trade: Withdrawal, 2017-02-12 16:23:05+00:00, , 0.00000000, BTC, 0.02010000, BTC, 0.00010000, Poloniex, , 1B6QTS4jbhRrqi23Puy9zF0nfVEapZtgNM
+INFO    : Withdrawing 0.02010000 BTC from Poloniex (2017-02-12 16:23:05+00:00, fee: 0.00010000 BTC)
+INFO    : Paying 0.00010000 BTC from Poloniex (including 0.00010000 BTC fees)
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.12331475 BTC
+INFO    : Contents of bag after payment: 0.12321475 BTC (spent 0.00010000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 0.095 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 0.095 EUR (Price 949.22225705 EUR/BTC)
+    Proceeds w/o fees: 0.000 EUR
+    Profit           : -0.095 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Taxable loss due to fees: -0.095 EUR
+INFO    : State of bags: 
+            exchange                      date currency      amount costcur         cost         price
+    id                                                                                                
+    2       Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR  73.55548040   11.74075083
+    3       Poloniex 2017-02-12 16:08:11+00:00      BTC  0.10321475     EUR  98.05633917  950.02254202
+    4   <in_transit> 2017-02-12 16:08:11+00:00      BTC  0.02000000     EUR  19.00045084  950.02254202
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10321475'), 'XMR': Decimal('6.26497244')}, 'in_transit': {'BTC': Decimal('0.02000000')}}
+INFO    : Gains: EUR -4.187729592485
+
+INFO    : TRADE #7
+INFO    : Received funds on 2017-02-12 16:31:20+00:00: Acquired 0.02000000 BTC, disposed of 0.00000000  for a fee of 0.00000000  on Bitsquare/Bisq [Received with: 1B6QTS4jbhRrqi23Puy9zF0nfVEapZtgNM]
+INFO    : Processing trade: Received funds, 2017-02-12 16:31:20+00:00, BTC, 0.02000000, , 0.00000000, , 0.00000000, Bitsquare/Bisq, , Received with: 1B6QTS4jbhRrqi23Puy9zF0nfVEapZtgNM
+INFO    : Depositing 0.02000000 BTC at Bitsquare/Bisq (2017-02-12 16:31:20+00:00, fee: 0.00000000 )
+INFO    : State of bags: 
+              exchange                      date currency      amount costcur         cost         price
+    id                                                                                                  
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR  73.55548040   11.74075083
+    3         Poloniex 2017-02-12 16:08:11+00:00      BTC  0.10321475     EUR  98.05633917  950.02254202
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC  0.02000000     EUR  19.00045084  950.02254202
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10321475'), 'XMR': Decimal('6.26497244')}, 'Bitsquare/bisq': {'BTC': Decimal('0.02000000')}}
+INFO    : Gains: EUR -4.187729592485
+
+INFO    : TRADE #8
+INFO    : Exchange on 2017-02-12 16:41:27+00:00: Acquired 280.80959359 PASC, disposed of 0.10321475 BTC for a fee of 0.42184716 PASC on Poloniex (Buy) [3112100001]
+INFO    : Processing trade: Exchange, 2017-02-12 16:41:27+00:00, PASC, 280.80959359, BTC, 0.10321475, PASC, 0.42184716, Poloniex, Buy, 3112100001
+INFO    : Selling 0.10321475 BTC for 280.80959359 PASC at Poloniex (2017-02-12 16:41:27+00:00, fee: 0.42184716 PASC)
+INFO    : Paying 0.10321475 BTC from Poloniex (including 0.00015482 BTC fees)
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.10321475 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.10321475 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 98.056 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 97.974 EUR (Price 949.22225705 EUR/BTC)
+    Proceeds w/o fees: 97.827 EUR
+    Profit           : -0.230 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+              exchange                      date currency        amount costcur         cost         price
+    id                                                                                                    
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR    6.26497244     EUR  73.55548040   11.74075083
+    5         Poloniex 2017-02-12 16:41:27+00:00     PASC  280.80959359     EUR  97.82677735    0.34837406
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC    0.02000000     EUR  19.00045084  950.02254202
+
+INFO    : Totals: {'Poloniex': {'XMR': Decimal('6.26497244'), 'PASC': Decimal('280.80959359')}, 'Bitsquare/bisq': {'BTC': Decimal('0.02000000')}}
+INFO    : Gains: EUR -4.417291411836
+
+INFO    : TRADE #9
+INFO    : Create offer fee: a5ed7482 on 2017-02-12 16:48:21+00:00: Acquired 0.00000000 , disposed of 0.00000000 BTC for a fee of 0.00050000 BTC on Bitsquare/Bisq [Sent to: 1Fgs78zXQOohFLd1PAZSBaG40nl2wTejIE]
+INFO    : Processing trade: Create offer fee: a5ed7482, 2017-02-12 16:48:21+00:00, , 0.00000000, BTC, 0, BTC, 0.00050000, Bitsquare/Bisq, , Sent to: 1Fgs78zXQOohFLd1PAZSBaG40nl2wTejIE
+INFO    : Paying 0.00050000 BTC from Bitsquare/bisq (including 0.00050000 BTC fees)
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.02000000 BTC
+INFO    : Contents of bag after payment: 0.01950000 BTC (spent 0.00050000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 0.475 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 0.475 EUR (Price 949.22225705 EUR/BTC)
+    Proceeds w/o fees: 0.000 EUR
+    Profit           : -0.475 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Taxable loss due to fees: -0.475 EUR
+INFO    : State of bags: 
+              exchange                      date currency        amount costcur         cost         price
+    id                                                                                                    
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR    6.26497244     EUR  73.55548040   11.74075083
+    5         Poloniex 2017-02-12 16:41:27+00:00     PASC  280.80959359     EUR  97.82677735    0.34837406
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC    0.01950000     EUR  18.52543957  950.02254202
+
+INFO    : Totals: {'Poloniex': {'XMR': Decimal('6.26497244'), 'PASC': Decimal('280.80959359')}, 'Bitsquare/bisq': {'BTC': Decimal('0.01950000')}}
+INFO    : Gains: EUR -4.892302682844
+
+INFO    : TRADE #10
+INFO    : Exchange on 2017-02-12 17:35:55+00:00: Acquired 0.10363980 BTC, disposed of 280.80959359 PASC for a fee of 0.00025974 BTC on Poloniex (Sell) [3116800001]
+INFO    : Processing trade: Exchange, 2017-02-12 17:35:55+00:00, BTC, 0.10363980, PASC, 280.80959359, BTC, 0.00025974, Poloniex, Sell, 3116800001
+INFO    : Selling 280.80959359 PASC for 0.10363980 BTC at Poloniex (2017-02-12 17:35:55+00:00, fee: 0.00025974 BTC)
+INFO    : Fetched historical price data with request: https://poloniex.com/public?start=1486857600&end=1486944000&command=returnTradeHistory&currencyPair=BTC_PASC
+INFO    : Successfully fetched 5243 trades
+INFO    : Paying 280.80959359 PASC from Poloniex (including 0.70200007 PASC fees)
+INFO    : Paying with bag from 2017-02-12 16:41:27+00:00, containing 280.80959359 PASC
+INFO    : Contents of bag after payment: 0.00000000 PASC (spent 280.80959359 PASC)
+INFO    : Profits in this transaction:
+    Original bag cost: 97.827 EUR (Price 0.34837406 EUR/PASC)
+    Proceeds         : 98.352 EUR (Price 0.35024475 EUR/PASC)
+    Proceeds w/o fees: 98.106 EUR
+    Profit           : 0.279 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+              exchange                      date currency      amount costcur         cost         price
+    id                                                                                                  
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR  73.55548040   11.74075083
+    6         Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR  98.10621295  946.60750940
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC  0.01950000     EUR  18.52543957  950.02254202
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10363980'), 'XMR': Decimal('6.26497244')}, 'Bitsquare/bisq': {'BTC': Decimal('0.01950000')}}
+INFO    : Gains: EUR -4.612867079328
+
+INFO    : TRADE #11
+INFO    : Buy BTC on 2017-02-14 15:10:17+00:00: Acquired 0.20000000 BTC, disposed of 192.40000000 EUR for a fee of 0.00000000 BTC on Bitsquare/Bisq [a5ed7482]
+INFO    : Processing trade: Buy BTC, 2017-02-14 15:10:17+00:00, BTC, 0.20000000, EUR, 192.40000000, BTC, 0.00000000, Bitsquare/Bisq, , a5ed7482
+INFO    : Buying 0.20000000 BTC for 192.40000000 EUR at Bitsquare/Bisq (2017-02-14 15:10:17+00:00)
+INFO    : State of bags: 
+              exchange                      date currency      amount costcur          cost         price
+    id                                                                                                   
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR   73.55548040   11.74075083
+    6         Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR   98.10621295  946.60750940
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC  0.01950000     EUR   18.52543957  950.02254202
+    7   Bitsquare/bisq 2017-02-14 15:10:17+00:00      BTC  0.20000000     EUR  192.40000000  962.00000000
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10363980'), 'XMR': Decimal('6.26497244')}, 'Bitsquare/bisq': {'BTC': Decimal('0.21950000')}}
+INFO    : Gains: EUR -4.612867079328
+
+INFO    : TRADE #12
+INFO    : MultiSig deposit: a5ed7482 on 2017-02-14 15:10:19+00:00: Acquired 0.00000000 , disposed of 0.01050000 BTC for a fee of 0.00050000 BTC on Bitsquare/Bisq [Sent to: 3D6Bk0MWLwTu5qHC8mXO7FNsbrfPZhAgox]
+INFO    : Processing trade: MultiSig deposit: a5ed7482, 2017-02-14 15:10:19+00:00, , 0.00000000, BTC, 0.01050000, BTC, 0.00050000, Bitsquare/Bisq, , Sent to: 3D6Bk0MWLwTu5qHC8mXO7FNsbrfPZhAgox
+INFO    : Withdrawing 0.01050000 BTC from Bitsquare/Bisq (2017-02-14 15:10:19+00:00, fee: 0.00050000 BTC)
+INFO    : Paying 0.00050000 BTC from Bitsquare/bisq (including 0.00050000 BTC fees)
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.01950000 BTC
+INFO    : Contents of bag after payment: 0.01900000 BTC (spent 0.00050000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 0.475 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 0.480 EUR (Price 959.36693044 EUR/BTC)
+    Proceeds w/o fees: 0.000 EUR
+    Profit           : -0.475 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Taxable loss due to fees: -0.475 EUR
+INFO    : State of bags: 
+              exchange                      date currency      amount costcur          cost         price
+    id                                                                                                   
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR   73.55548040   11.74075083
+    6         Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR   98.10621295  946.60750940
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC  0.00900000     EUR    8.55020288  950.02254202
+    7   Bitsquare/bisq 2017-02-14 15:10:17+00:00      BTC  0.20000000     EUR  192.40000000  962.00000000
+    8     <in_transit> 2017-02-12 16:08:11+00:00      BTC  0.01000000     EUR    9.50022542  950.02254202
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10363980'), 'XMR': Decimal('6.26497244')}, 'Bitsquare/bisq': {'BTC': Decimal('0.20900000')}, 'in_transit': {'BTC': Decimal('0.0100')}}
+INFO    : Gains: EUR -5.087878350336
+
+INFO    : TRADE #13
+INFO    : MultiSig payout: a5ed7482 on 2017-02-16 16:16:29+00:00: Acquired 0.01000000 BTC, disposed of 0.00000000  for a fee of 0.00000000  on Bitsquare/Bisq [Received with: 1BVGiDELH2SWpuwb64rqdZx8MymcanJ7oY]
+INFO    : Processing trade: MultiSig payout: a5ed7482, 2017-02-16 16:16:29+00:00, BTC, 0.01000000, , 0.00000000, , 0.00000000, Bitsquare/Bisq, , Received with: 1BVGiDELH2SWpuwb64rqdZx8MymcanJ7oY
+INFO    : Depositing 0.01000000 BTC at Bitsquare/Bisq (2017-02-16 16:16:29+00:00, fee: 0.00000000 )
+INFO    : State of bags: 
+              exchange                      date currency      amount costcur          cost         price
+    id                                                                                                   
+    2         Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR   73.55548040   11.74075083
+    6         Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR   98.10621295  946.60750940
+    4   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC  0.00900000     EUR    8.55020288  950.02254202
+    8   Bitsquare/bisq 2017-02-12 16:08:11+00:00      BTC  0.01000000     EUR    9.50022542  950.02254202
+    7   Bitsquare/bisq 2017-02-14 15:10:17+00:00      BTC  0.20000000     EUR  192.40000000  962.00000000
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10363980'), 'XMR': Decimal('6.26497244')}, 'Bitsquare/bisq': {'BTC': Decimal('0.21900000')}}
+INFO    : Gains: EUR -5.087878350336
+
+INFO    : TRADE #14
+INFO    : Withdrawn from wallet on 2017-02-16 16:38:03+00:00: Acquired 0.00000000 , disposed of 0.21900000 BTC for a fee of 0.00050000 BTC on Bitsquare/Bisq [Sent to: 14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW]
+INFO    : Processing trade: Withdrawn from wallet, 2017-02-16 16:38:03+00:00, , 0.00000000, BTC, 0.21900000, BTC, 0.00050000, Bitsquare/Bisq, , Sent to: 14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW
+INFO    : Withdrawing 0.21900000 BTC from Bitsquare/Bisq (2017-02-16 16:38:03+00:00, fee: 0.00050000 BTC)
+INFO    : Paying 0.00050000 BTC from Bitsquare/bisq (including 0.00050000 BTC fees)
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.00900000 BTC
+INFO    : Contents of bag after payment: 0.00850000 BTC (spent 0.00050000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 0.475 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 0.492 EUR (Price 984.13584034 EUR/BTC)
+    Proceeds w/o fees: 0.000 EUR
+    Profit           : -0.475 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Taxable loss due to fees: -0.475 EUR
+INFO    : State of bags: 
+            exchange                      date currency      amount costcur          cost         price
+    id                                                                                                 
+    2       Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR   73.55548040   11.74075083
+    6       Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR   98.10621295  946.60750940
+    4   <in_transit> 2017-02-12 16:08:11+00:00      BTC  0.00850000     EUR    8.07519161  950.02254202
+    8   <in_transit> 2017-02-12 16:08:11+00:00      BTC  0.01000000     EUR    9.50022542  950.02254202
+    7   <in_transit> 2017-02-14 15:10:17+00:00      BTC  0.20000000     EUR  192.40000000  962.00000000
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.10363980'), 'XMR': Decimal('6.26497244')}, 'in_transit': {'BTC': Decimal('0.21850000')}}
+INFO    : Gains: EUR -5.562889621344
+
+INFO    : TRADE #15
+INFO    : Deposit on 2017-02-16 16:55:19+00:00: Acquired 0.21850000 BTC, disposed of 0.00000000  for a fee of 0.00000000  on Poloniex [14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW]
+INFO    : Processing trade: Deposit, 2017-02-16 16:55:19+00:00, BTC, 0.21850000, , 0.00000000, , 0.00000000, Poloniex, , 14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW
+INFO    : Depositing 0.21850000 BTC at Poloniex (2017-02-16 16:55:19+00:00, fee: 0.00000000 )
+INFO    : State of bags: 
+        exchange                      date currency      amount costcur          cost         price
+    id                                                                                             
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR  6.26497244     EUR   73.55548040   11.74075083
+    4   Poloniex 2017-02-12 16:08:11+00:00      BTC  0.00850000     EUR    8.07519161  950.02254202
+    8   Poloniex 2017-02-12 16:08:11+00:00      BTC  0.01000000     EUR    9.50022542  950.02254202
+    6   Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR   98.10621295  946.60750940
+    7   Poloniex 2017-02-14 15:10:17+00:00      BTC  0.20000000     EUR  192.40000000  962.00000000
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.32213980'), 'XMR': Decimal('6.26497244')}}
+INFO    : Gains: EUR -5.562889621344
+
+INFO    : TRADE #16
+INFO    : Exchange on 2017-02-17 06:24:48+00:00: Acquired 0.04154643 BTC, disposed of 3.26497244 XMR for a fee of 0.00006241 BTC on Poloniex (Sell) [122421900001]
+INFO    : Processing trade: Exchange, 2017-02-17 06:24:48+00:00, BTC, 0.04154643, XMR, 3.26497244, BTC, 0.00006241, Poloniex, Sell, 122421900001
+INFO    : Selling 3.26497244 XMR for 0.04154643 BTC at Poloniex (2017-02-17 06:24:48+00:00, fee: 0.00006241 BTC)
+INFO    : Fetched historical price data with request: https://poloniex.com/public?start=1487289600&end=1487376000&command=returnTradeHistory&currencyPair=BTC_XMR
+INFO    : Successfully fetched 10129 trades
+INFO    : Paying 3.26497244 XMR from Poloniex (including 0.00489720 XMR fees)
+INFO    : Paying with bag from 2017-02-11 20:21:21+00:00, containing 6.26497244 XMR
+INFO    : Contents of bag after payment: 3.00000000 XMR (spent 3.26497244 XMR)
+INFO    : Profits in this transaction:
+    Original bag cost: 38.333 EUR (Price 11.74075083 EUR/XMR)
+    Proceeds         : 40.975 EUR (Price 12.54973392 EUR/XMR)
+    Proceeds w/o fees: 40.913 EUR
+    Profit           : 2.580 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+        exchange                      date currency      amount costcur          cost         price
+    id                                                                                             
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR  3.00000000     EUR   35.22225250   11.74075083
+    4   Poloniex 2017-02-12 16:08:11+00:00      BTC  0.00850000     EUR    8.07519161  950.02254202
+    8   Poloniex 2017-02-12 16:08:11+00:00      BTC  0.01000000     EUR    9.50022542  950.02254202
+    6   Poloniex 2017-02-12 17:35:55+00:00      BTC  0.10363980     EUR   98.10621295  946.60750940
+    7   Poloniex 2017-02-14 15:10:17+00:00      BTC  0.20000000     EUR  192.40000000  962.00000000
+    9   Poloniex 2017-02-17 06:24:48+00:00      BTC  0.04154643     EUR   40.91307679  984.75553242
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('0.36368623'), 'XMR': Decimal('3.00000000')}}
+INFO    : Gains: EUR -2.983040723717
+
+INFO    : TRADE #17
+INFO    : Exchange on 2017-02-18 20:31:28+00:00: Acquired 7259.18667370 GNT, disposed of 0.26368623 BTC for a fee of 10.90513771 GNT on Poloniex (Buy) [151600001]
+INFO    : Processing trade: Exchange, 2017-02-18 20:31:28+00:00, GNT, 7259.18667370, BTC, 0.26368623, GNT, 10.90513771, Poloniex, Buy, 151600001
+INFO    : Selling 0.26368623 BTC for 7259.18667370 GNT at Poloniex (2017-02-18 20:31:28+00:00, fee: 10.90513771 GNT)
+INFO    : Paying 0.26368623 BTC from Poloniex (including 0.00039553 BTC fees)
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.00850000 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.00850000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 8.075 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 8.460 EUR (Price 995.34314464 EUR/BTC)
+    Proceeds w/o fees: 8.448 EUR
+    Profit           : 0.373 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Still to be paid with another bag: 0.25518623 BTC
+INFO    : Paying with bag from 2017-02-12 16:08:11+00:00, containing 0.01000000 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.01000000 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 9.500 EUR (Price 950.02254202 EUR/BTC)
+    Proceeds         : 9.953 EUR (Price 995.34314464 EUR/BTC)
+    Proceeds w/o fees: 9.939 EUR
+    Profit           : 0.438 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Still to be paid with another bag: 0.24518623 BTC
+INFO    : Paying with bag from 2017-02-12 17:35:55+00:00, containing 0.10363980 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.10363980 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 98.106 EUR (Price 946.60750940 EUR/BTC)
+    Proceeds         : 103.157 EUR (Price 995.34314464 EUR/BTC)
+    Proceeds w/o fees: 103.002 EUR
+    Profit           : 4.896 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Still to be paid with another bag: 0.14154643 BTC
+INFO    : Paying with bag from 2017-02-14 15:10:17+00:00, containing 0.20000000 BTC
+INFO    : Contents of bag after payment: 0.05845357 BTC (spent 0.14154643 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 136.168 EUR (Price 962.00000000 EUR/BTC)
+    Proceeds         : 140.887 EUR (Price 995.34314464 EUR/BTC)
+    Proceeds w/o fees: 140.676 EUR
+    Profit           : 4.508 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+        exchange                      date currency         amount costcur          cost         price
+    id                                                                                                
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR     3.00000000     EUR   35.22225250   11.74075083
+    7   Poloniex 2017-02-14 15:10:17+00:00      BTC     0.05845357     EUR   56.23233434  962.00000000
+    9   Poloniex 2017-02-17 06:24:48+00:00      BTC     0.04154643     EUR   40.91307679  984.75553242
+    10  Poloniex 2017-02-18 20:31:28+00:00      GNT  7259.18667370     EUR  262.06459394    0.03610110
+
+INFO    : Totals: {'Poloniex': {'GNT': Decimal('7259.18667370'), 'BTC': Decimal('0.10000000'), 'XMR': Decimal('3.00000000')}}
+INFO    : Gains: EUR 7.232257579673
+
+INFO    : TRADE #18
+INFO    : Exchange on 2017-04-30 17:18:31+00:00: Acquired 1.28802254 BTC, disposed of 7259.18667370 GNT for a fee of 0.00193493 BTC on Poloniex (Sell) [2776700001]
+INFO    : Processing trade: Exchange, 2017-04-30 17:18:31+00:00, BTC, 1.28802254, GNT, 7259.18667370, BTC, 0.00193493, Poloniex, Sell, 2776700001
+INFO    : Selling 7259.18667370 GNT for 1.28802254 BTC at Poloniex (2017-04-30 17:18:31+00:00, fee: 0.00193493 BTC)
+INFO    : Fetched historical price data with request: https://poloniex.com/public?start=1493510400&end=1493596800&command=returnTradeHistory&currencyPair=BTC_GNT
+INFO    : Successfully fetched 50000 trades
+INFO    : Fetched historical price data with request: https://poloniex.com/public?start=1493510400&end=1493542799&command=returnTradeHistory&currencyPair=BTC_GNT
+INFO    : Successfully fetched 9179 trades
+INFO    : Paying 7259.18667370 GNT from Poloniex (including 10.88874509 GNT fees)
+INFO    : Paying with bag from 2017-02-18 20:31:28+00:00, containing 7259.18667370 GNT
+INFO    : Contents of bag after payment: 0.00000000 GNT (spent 7259.18667370 GNT)
+INFO    : Profits in this transaction:
+    Original bag cost: 262.065 EUR (Price 0.03610110 EUR/GNT)
+    Proceeds         : 1508.511 EUR (Price 0.20780715 EUR/GNT)
+    Proceeds w/o fees: 1506.248 EUR
+    Profit           : 1244.184 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+        exchange                      date currency      amount costcur           cost          price
+    id                                                                                               
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR  3.00000000     EUR    35.22225250    11.74075083
+    7   Poloniex 2017-02-14 15:10:17+00:00      BTC  0.05845357     EUR    56.23233434   962.00000000
+    9   Poloniex 2017-02-17 06:24:48+00:00      BTC  0.04154643     EUR    40.91307679   984.75553242
+    11  Poloniex 2017-04-30 17:18:31+00:00      BTC  1.28802254     EUR  1506.24816753  1169.42687007
+
+INFO    : Totals: {'Poloniex': {'BTC': Decimal('1.38802254'), 'XMR': Decimal('3.00000000')}}
+INFO    : Gains: EUR 1251.415831163435
+
+INFO    : TRADE #19
+INFO    : Exchange on 2017-05-16 22:25:40+00:00: Acquired 92.57377540 XMR, disposed of 1.38802254 BTC for a fee of 0.13906926 XMR on Poloniex (Buy) [174231700001]
+INFO    : Processing trade: Exchange, 2017-05-16 22:25:40+00:00, XMR, 92.57377540, BTC, 1.38802254, XMR, 0.13906926, Poloniex, Buy, 174231700001
+INFO    : Selling 1.38802254 BTC for 92.57377540 XMR at Poloniex (2017-05-16 22:25:40+00:00, fee: 0.13906926 XMR)
+INFO    : Paying 1.38802254 BTC from Poloniex (including 0.00208203 BTC fees)
+INFO    : Paying with bag from 2017-02-14 15:10:17+00:00, containing 0.05845357 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.05845357 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 56.232 EUR (Price 962.00000000 EUR/BTC)
+    Proceeds         : 93.411 EUR (Price 1598.03384878 EUR/BTC)
+    Proceeds w/o fees: 93.271 EUR
+    Profit           : 37.038 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Still to be paid with another bag: 1.32956897 BTC
+INFO    : Paying with bag from 2017-02-17 06:24:48+00:00, containing 0.04154643 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 0.04154643 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 40.913 EUR (Price 984.75553242 EUR/BTC)
+    Proceeds         : 66.393 EUR (Price 1598.03384878 EUR/BTC)
+    Proceeds w/o fees: 66.293 EUR
+    Profit           : 25.380 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : Still to be paid with another bag: 1.28802254 BTC
+INFO    : Paying with bag from 2017-04-30 17:18:31+00:00, containing 1.28802254 BTC
+INFO    : Contents of bag after payment: 0.00000000 BTC (spent 1.28802254 BTC)
+INFO    : Profits in this transaction:
+    Original bag cost: 1506.248 EUR (Price 1169.42687007 EUR/BTC)
+    Proceeds         : 2058.304 EUR (Price 1598.03384878 EUR/BTC)
+    Proceeds w/o fees: 2055.216 EUR
+    Profit           : 548.968 EUR
+    Taxable?         : yes (held for less than a year)
+INFO    : State of bags: 
+        exchange                      date currency       amount costcur           cost        price
+    id                                                                                              
+    2   Poloniex 2017-02-11 20:21:21+00:00      XMR   3.00000000     EUR    35.22225250  11.74075083
+    12  Poloniex 2017-05-16 22:25:40+00:00      XMR  92.57377540     EUR  2214.77984145  23.92448436
+
+INFO    : Totals: {'Poloniex': {'XMR': Decimal('95.57377540')}}
+INFO    : Gains: EUR 1862.802093954361
+
+INFO    : Saved bags' state to status2017.json
+INFO    : Saved short capital gains report for year 2017 to Report2017.pdf
+INFO    : Saved short capital gains report for year 2017 to Report2017_de.pdf
+INFO    : Exported capital gains report data for year 2017 to report_2017.csv
+INFO    : Saved detailed capital gains report for year 2017 to Details_2017.pdf
+INFO    : Saved detailed capital gains report for year 2017 to Details_2017_de.pdf

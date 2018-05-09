@@ -1,0 +1,6 @@
+Date/Time,Details,Address,Transaction ID,Amount in BTC,Confirmations
+"2017-02-16 5:38:03 PM",Withdrawn from wallet,Sent to: 14FciuDXA2Vx5UtvyC7JsL4hQd0kwTlzaW,7ff38af2adcb85037e058f996e81a377f59213fa1157cff287a74d9509dc838e,-0.219,35048
+"2017-02-16 5:16:29 PM",MultiSig payout: a5ed7482,Received with: 1BVGiDELH2SWpuwb64rqdZx8MymcanJ7oY,8f58ee6d6b413c9cbe55f95eb4861cee9dbf46017a5e08b15b1232ca900ce161,0.21,35051
+"2017-02-14 4:10:19 PM",MultiSig deposit: a5ed7482,Sent to: 3D6Bk0MWLwTu5qHC8mXO7FNsbrfPZhAgox,c0b7b9248857ea8500eb015ae125b1e0b11ed5bb4a7c84c229cdbd3eeb958917,-0.0105,35269
+"2017-02-12 5:48:21 PM",Create offer fee: a5ed7482,Sent to: 1Fgs78zXQOohFLd1PAZSBaG40nl2wTejIE,95be615cce44ce5358c744e8d1637e09e177c5853dee63476cda2cce6ac8684c,-0.0005,35624
+"2017-02-12 5:31:20 PM",Received funds,Received with: 1B6QTS4jbhRrqi23Puy9zF0nfVEapZtgNM,df9266cfa9304559a4d31c6e28bc93d8f03d2fe354885420a86564b5e826907a,0.02,35625

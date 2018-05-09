@@ -1,0 +1,4 @@
+Date;Type;Währungen;Reference;Kurs;"BTC incl. fee";"EUR incl. fee";"BTC excl. fee";"EUR excl. fee";"Incoming / Outgoing";"Account balance"
+"2017-02-06 17:04:03";Purchase;"BTC / EUR";AABBCC;978.90;0.20000000;195.78;0.19800000;194.80;0.19800000;0.19800000
+"2017-02-10 00:37:45";Disbursement;;7bf9065a97b8d0cac275474297bf0e7463d8ba82edc267293ed04f9100851a01;;;;;;-0.19790000;0.00010000
+"2017-02-10 00:37:45";"Network fee";;7bf9065a97b8d0cac275474297bf0e7463d8ba82edc267293ed04f9100851a01;;;;;;-0.00010000;0.00000000
