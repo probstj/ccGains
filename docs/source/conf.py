@@ -19,14 +19,14 @@ sys.path.insert(0, os.path.abspath('../..'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'ccGains'
-copyright = '2017, Jürgen Probst'
-author = 'Jürgen Probst'
+project = u'ccGains'
+copyright = u'2017, Jürgen Probst'
+author = u'Jürgen Probst'
 
 # The short X.Y version
-version = '1.0'
+version = u'1.0'
 # The full version, including alpha/beta/rc tags
-release = '1.0.0 beta'
+release = u'1.0.0 beta'
 
 
 # -- General configuration ---------------------------------------------------
