@@ -161,18 +161,23 @@ class BagFIFO(object):
             self, base_currency, relation, json_dump='./precrash.json'):
         """Create a BagFIFO object.
 
-        param: base_currency:
-            The base currency (string, e.g. "EUR"). All bag's values
+        This is the class that processes trades, handles all bags (i.e.
+        creating and spending them) and calculates the capital gains.
+        After calculation, the member BagFIFO.report provides methods
+        to create reports.
+
+        :param base_currency:
+            The base currency (string, e.g. "EUR"). All bags' base cost
             (the money spent for them at buying time) will be recorded
-            in units of this currency and finally the gain will be
-            calculated for this currency.
+            in units of this currency and finally the capital gains
+            will be calculated for this currency.
 
         :param relation:
             A CurrencyRelation object which serves exchange rates
             between all currencies involved in trades which will later
             be added to this BagFIFO.
 
-        :param json_dump (filename):
+        :param json_dump: (filename)
             If specified, the state of the BagFIFO will be saved as
             JSON formatted file with this file name just before an error
             is raised due to missing or conflicting data. If the error
@@ -633,16 +638,16 @@ class BagFIFO(object):
         If *amount* is higher than the available total amount,
         ValueError is raised.
 
-        :param dtime (datetime): The date and time when the payment
+        :param dtime: (datetime) The date and time when the payment
             occured.
-        :param amount (number, decimal or parsable string):
+        :param amount: (number, decimal or parsable string)
             The amount being spent, including fees.
-        :param currency (string): The currency being spent.
-        :param exchange (string): The unique name of the
+        :param currency: (string) The currency being spent.
+        :param exchange: (string) The unique name of the
             exchange/wallet where the funds that are being spent are
             taken from.
-        :param fee_ratio (number, decimal or parsable string),
-            0 <= fee_ratio <= 1: The ratio of *amount* that are fees.
+        :param fee_ratio: (number, decimal or parsable string),
+            0 <= fee_ratio <= 1; The ratio of *amount* that are fees.
             Default: 0.
         :param report_info: dict, default None:
             Additional information that will be added to the capital
@@ -661,19 +666,21 @@ class BagFIFO(object):
 
         :returns: the tuple `(short_term_profit, total_proceeds)`,
             with each value given in units of the base currency, where:
-            - `short_term_profit` is the taxable short term profit (or
-            loss if negative) made in this sale. This only takes into
-            account the part of *amount* which was acquired less than
-            a year prior to *dtime* (or whatever time period is used by
-            `is_short_term`). The short term profit equals the proceeds
-            made by liquidating this amount for its price at *dtime*
-            minus its original cost, with the fees already substracted
-            from these proceeds.
-            - `total_proceeds` are the total proceeds returned from this
-            sale, i.e. it includes the full *amount* (held for any amount
-            of time) at its price at *dtime*, with fees already
-            substracted. This value equals the base cost of any new
-            currency purchased with this sale.
+
+              - `short_term_profit` is the taxable short term profit (or
+              loss if negative) made in this sale. This only takes into
+              account the part of *amount* which was acquired less than
+              a year prior to *dtime* (or whatever time period is used by
+              `is_short_term`). The short term profit equals the proceeds
+              made by liquidating this amount for its price at *dtime*
+              minus its original cost, with the fees already substracted
+              from these proceeds.
+
+              - `total_proceeds` are the total proceeds returned from this
+              sale, i.e. it includes the full *amount* (held for any amount
+              of time) at its price at *dtime*, with fees already
+              substracted. This value equals the base cost of any new
+              currency purchased with this sale.
 
         """
         self._check_order(dtime)

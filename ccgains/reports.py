@@ -76,14 +76,13 @@ class CapitalGainsReport(object):
     sales etc. with foreign or digital currencies. Afterwards, provided
     methods for creating reports from the gathered data can be used.
     Capital gains reports created from the gathered data can then be
-    exported to csv, markdown, html, pdf etc., using the provided
-    methods.
+    exported to csv, html, pdf etc., using the provided methods.
 
     """
     # TODO: Implement translation support (i18n)
     # add plotting & statistical functions
     def __init__(self, data=[]):
-        """Create a CaptialGainsReport object.
+        """Create a CaptitalGainsReport object.
 
         Then, with every processed payment, you should add data
         with `add_payment`.
@@ -131,7 +130,7 @@ class CapitalGainsReport(object):
         :param year: None or 4-digit integer, default: None;
             Leave `None` to return all sales or choose a specific
             year to return.
-        :param date_precision: one of 'D', 'H' or 'T' for dayly, hourly
+        :param date_precision: one of 'D', 'H' or 'T' for daily, hourly
             or minutely, respectively (may also be multiplied, e.g.:
             '5T' for 5-minutely), default: 'D';
             Floors all datetimes to the specified frequency.
@@ -155,7 +154,7 @@ class CapitalGainsReport(object):
         :param strip_timezone: boolean, default True;
             After conversion, the timezone info will be removed from
             all dates.
-        :param extended: boolean, default False:
+        :param extended: boolean, default False;
             By default, the returned DataFrame contains the columns:
                 ['kind', 'bag_spent', 'currency', 'bag_date',
                  'sell_date', 'exchange', 'short_term',
@@ -171,7 +170,7 @@ class CapitalGainsReport(object):
         :param custom_column_names: None or list of strings;
             If None (default), the column names will be as described
             above, depending on *extended*. To rename them, supply a
-            list of proper length, either 10 if not *extended or 17
+            list of proper length, either 10 if not *extended* or 17
             otherwise.
         :returns: A pandas.DataFrame with the requested data.
 
@@ -244,13 +243,13 @@ class CapitalGainsReport(object):
         'kind', 'amount', 'currency', 'purchase_date', 'sell_date',
         'exchange', 'short_term', 'cost', 'proceeds' and 'profit'.
 
-        :param path_or_buf: string or file handle, default None
-            File path or object, if None is provided the result
-            is returned as a string.
+        :param path_or_buf: File path (string) or file handle,
+            default None;
+            If None is provided the result is returned as a string.
         :param year: None or 4-digit integer, default: None;
             Leave `None` to export all sales or choose a specific
             year to export.
-        :param date_precision: one of 'D', 'H' or 'T' for dayly, hourly
+        :param date_precision: one of 'D', 'H' or 'T' for daily, hourly
             or minutely, respectively (may also be multiplied, e.g.:
             '5T' for 5-minutely), default: 'D';
             Floors all datetimes to the specified frequency.
@@ -332,7 +331,7 @@ class CapitalGainsReport(object):
         :param year: None or 4-digit integer, default: None;
             Leave `None` to export all sales or choose a specific
             year to export.
-        :param date_precision: one of 'D', 'H' or 'T' for dayly, hourly
+        :param date_precision: one of 'D', 'H' or 'T' for daily, hourly
             or minutely, respectively (may also be multiplied, e.g.:
             '5T' for 5-minutely), default: 'D';
             Floors all datetimes to the specified frequency.
@@ -549,7 +548,7 @@ class CapitalGainsReport(object):
         :param year: None or 4-digit integer, default: None;
             Leave `None` to export all sales or choose a specific
             year to export.
-        :param date_precision: one of 'D', 'H' or 'T' for dayly, hourly
+        :param date_precision: one of 'D', 'H' or 'T' for daily, hourly
             or minutely, respectively (may also be multiplied, e.g.:
             '5T' for 5-minutely), default: 'D';
             Floors all datetimes to the specified frequency.
@@ -606,7 +605,7 @@ class CapitalGainsReport(object):
     def get_extended_report_html(
             self, year=None, date_precision='D', combine=True,
             convert_timezone=True, font_size=10,
-            template_file='fullreport_de.html',
+            template_file='fullreport_en.html',
             payment_kind_translation=None,
             locale=None):
         """Return an extended capital gains report as HTML-formatted
@@ -615,7 +614,7 @@ class CapitalGainsReport(object):
         :param year: None or 4-digit integer, default: None;
             Leave `None` to export all sales or choose a specific
             year to export.
-        :param date_precision: one of 'D', 'H' or 'T' for dayly, hourly
+        :param date_precision: one of 'D', 'H' or 'T' for daily, hourly
             or minutely, respectively (may also be multiplied, e.g.:
             '5T' for 5-minutely), default: 'D';
             Floors all datetimes to the specified frequency.
@@ -637,7 +636,7 @@ class CapitalGainsReport(object):
             UTC time. Otherwise, specify a parameter that will be
             forwarded to pandas.Timestamp.tz_convert().
         :param template_file: file name of html template inside package
-            folder: `ccgains/templates`. Default: 'fullreport_de.html'
+            folder: `ccgains/templates`. Default: 'fullreport_en.html'
         :param payment_kind_translation: None (default) or dictionary;
             This allows for the payment kind (one out of
             ['sale', 'withdrawal fee', 'deposit fee', 'exchange fee'])
@@ -682,7 +681,7 @@ class CapitalGainsReport(object):
         :param year: None or 4-digit integer, default: None;
             Leave `None` to export all sales or choose a specific
             year to export.
-        :param date_precision: one of 'D', 'H' or 'T' for dayly, hourly
+        :param date_precision: one of 'D', 'H' or 'T' for daily, hourly
             or minutely, respectively (may also be multiplied, e.g.:
             '5T' for 5-minutely), default: 'D';
             Floors all datetimes to the specified frequency.
@@ -704,7 +703,7 @@ class CapitalGainsReport(object):
             UTC time. Otherwise, specify a parameter that will be
             forwarded to pandas.Timestamp.tz_convert().
         :param template_file: file name of html template inside package
-            folder: `ccgains/templates`. Default: 'fullreport_de.html'
+            folder: `ccgains/templates`. Default: 'fullreport_en.html'
         :param payment_kind_translation: None (default) or dictionary;
             This allows for the payment kind (one out of
             ['sale', 'withdrawal fee', 'deposit fee', 'exchange fee'])

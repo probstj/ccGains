@@ -50,11 +50,11 @@ def resample_weighted_average(
         If True, include the summed weights in result
     :return:
         if include_weights:
-            pandas.Series with weighted averages
-        else:
             pands.DataFrame with two columns:
                 data_col: the weighted averages,
                 weight_col: the summed weights
+        else:
+            pandas.Series with weighted averages
 
     Source: ErnestScribbler, https://stackoverflow.com/a/44683506
 

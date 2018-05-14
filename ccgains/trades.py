@@ -284,7 +284,10 @@ class TradeHistory(object):
 
     """
     def __init__(self):
-        """Create a TradeHistory object."""
+        """`TradeHistory()` creates a TradeHistory object.
+
+            self.tlist is a sorted list of trades available after
+            some trades have been imported."""
         self.tlist = []
 
     def __getitem__(self, item):
@@ -334,7 +337,7 @@ class TradeHistory(object):
         return self.to_data_frame().to_string()
 
     def add_missing_transaction_fees(self, raise_on_error=True):
-        """Some exchanges does not include withdrawal fees in their
+        """Some exchanges do not include withdrawal fees in their
         exported csv files. This will try to add these missing fees
         by comparing withdrawn amounts with amounts deposited on other
         exchanges shortly after withdrawal. Call this only after all
@@ -517,13 +520,13 @@ class TradeHistory(object):
 
         Afterwards, all trades will be sorted by date and time.
 
-        :param which_data (string):
-            Must be one of "trades", "withdrawals" or "deposits".
-            Poloniex only allows exporting the tree categories
+        :param which_data: (string)
+            Must be one of `"trades"`, `"withdrawals"` or `"deposits"`.
+            Poloniex only allows exporting the three categories
             'trading history', 'withdrawal history' and 'deposit history'
             in separate csv files. Specify which type is loaded here.
             Default is 'trades'.
-        :param condense_trades (bool):
+        :param condense_trades: (bool)
             Merge consecutive trades with identical order number? The
             time of the last merged trade will be used for the resulting
             trade. Only has an effect if `which_data == 'trades'`.
@@ -820,9 +823,9 @@ class TradeHistory(object):
         'sell_amount', 'fee_currency', 'fee_amount', 'exchange',
         'mark' and 'comment'.
 
-        :param path_or_buf: string or file handle, default None
-            File path or object, if None is provided the result
-            is returned as a string.
+        :param path_or_buf: File path (string) or file handle,
+            default None;
+            If None is provided the result is returned as a string.
         :param year: None or 4-digit integer, default: None;
             Leave `None` to export all trades or choose a specific
             year to export.
