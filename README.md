@@ -56,7 +56,7 @@ ccGains is distributed in the hope that it will be useful, but WITHOUT ANY WARRA
 
 ### Documentation
 
-The ccGains documentation is available online at [Read the Docs](https://ccGains.readthedocs.io). You can also download a [PDF version](https://readthedocs.org/projects/ccGains/downloads/pdf/latest/).
+The ccGains documentation is available online at [Read the Docs](https://ccgains.readthedocs.io). You can also download a [PDF version](https://readthedocs.org/projects/ccgains/downloads/pdf/latest/).
 
 ### Bug reports & feature requests
 
