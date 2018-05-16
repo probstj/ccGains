@@ -155,18 +155,24 @@ class CapitalGainsReport(object):
             After conversion, the timezone info will be removed from
             all dates.
         :param extended: boolean, default False;
+
             By default, the returned DataFrame contains the columns:
-                ['kind', 'bag_spent', 'currency', 'bag_date',
-                 'sell_date', 'exchange', 'short_term',
-                 'spent_cost', 'proceeds', 'profit'];
+
+             ['kind', 'bag_spent', 'currency', 'bag_date',
+             'sell_date', 'exchange', 'short_term',
+             'spent_cost', 'proceeds', 'profit'];
+
             If *extended* is True, these columns will be returned:
-                ['kind', 'exchange', 'sell_date',
-                'currency', 'to_pay','fee_ratio',
-                'bag_date', 'bag_amount', 'bag_spent',
-                'cost_currency', 'spent_cost', 'short_term',
-                'ex_rate', 'proceeds', 'profit',
-                'buy_currency, buy_ratio']
+
+             ['kind', 'exchange', 'sell_date',
+             'currency', 'to_pay','fee_ratio',
+             'bag_date', 'bag_amount', 'bag_spent',
+             'cost_currency', 'spent_cost', 'short_term',
+             'ex_rate', 'proceeds', 'profit',
+             'buy_currency, buy_ratio']
+
             Note the reordering of columns in the small dataset.
+
         :param custom_column_names: None or list of strings;
             If None (default), the column names will be as described
             above, depending on *extended*. To rename them, supply a

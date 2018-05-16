@@ -127,12 +127,13 @@ class Bag(object):
 
         :returns: the tuple (spent_amount, bcost, remainder),
             where
-                - *spent_amount* is the amount taken out of the bag, in
-                  units of `self.currency`;
-                - *bcost* is the base cost of the spent amount, in
-                  units of `self.cost_currency`;
-                - *remainder* is the leftover of *amount* after the
-                  spent amount is substracted.
+
+             - *spent_amount* is the amount taken out of the bag, in
+               units of `self.currency`;
+             - *bcost* is the base cost of the spent amount, in
+               units of `self.cost_currency`;
+             - *remainder* is the leftover of *amount* after the
+               spent amount is substracted.
 
         """
         amount = Decimal(amount)
@@ -465,6 +466,7 @@ class BagFIFO(object):
         leaving the bank account), then transfer it to another exchange
         (paying withdrawal and/or deposit fees) where we sell it again
         for fiat, e.g.:
+
             - buy 1 BTC @ 1000 EUR at exchangeA;
               now we own 1 BTC with base value 1000 EUR
             - transfer 1 BTC to exchangeB for 0.1 BTC fees;
@@ -649,38 +651,45 @@ class BagFIFO(object):
         :param fee_ratio: (number, decimal or parsable string),
             0 <= fee_ratio <= 1; The ratio of *amount* that are fees.
             Default: 0.
-        :param report_info: dict, default None:
+        :param report_info: dict, default None;
             Additional information that will be added to the capital
             gains report data. Currently, the only keys looked for are:
             'kind', 'buy_currency' and 'buy_ratio'. For each one of
             them omitted in the dict, these default values will be used:
-            `{'kind': 'payment', 'buy_currency': '', 'buy_ratio': 0}`,
+
+             `{'kind': 'payment', 'buy_currency': '', 'buy_ratio': 0}`,
+
             This is also the default dict used when *report_info* is
             `None`.
-            - 'kind' is the type of transaction, i.e. 'sale',
-            'withdrawal fee', 'payment' etc.;
-            - 'buy_currency' is the currency bought in this trade;
-            - 'buy_ratio' is the amount of 'buy_currency' bought with
-            one unit of *currency*, i.e. `bought_amount / spent_amount`;
-            only used if 'buy_currency' is not empty.
+
+             - 'kind' is the type of transaction, i.e. 'sale',
+               'withdrawal fee', 'payment' etc.;
+             - 'buy_currency' is the currency bought in this trade;
+             - 'buy_ratio' is the amount of 'buy_currency' bought with
+               one unit of *currency*, i.e. `bought_amount / spent_amount`;
+               only used if 'buy_currency' is not empty.
 
         :returns: the tuple `(short_term_profit, total_proceeds)`,
             with each value given in units of the base currency, where:
 
-              - `short_term_profit` is the taxable short term profit (or
-              loss if negative) made in this sale. This only takes into
-              account the part of *amount* which was acquired less than
-              a year prior to *dtime* (or whatever time period is used by
-              `is_short_term`). The short term profit equals the proceeds
-              made by liquidating this amount for its price at *dtime*
-              minus its original cost, with the fees already substracted
-              from these proceeds.
+              - `short_term_profit`
 
-              - `total_proceeds` are the total proceeds returned from this
-              sale, i.e. it includes the full *amount* (held for any amount
-              of time) at its price at *dtime*, with fees already
-              substracted. This value equals the base cost of any new
-              currency purchased with this sale.
+               is the taxable short term profit (or
+               loss if negative) made in this sale. This only takes into
+               account the part of *amount* which was acquired less than
+               a year prior to *dtime* (or whatever time period is used by
+               `is_short_term`). The short term profit equals the proceeds
+               made by liquidating this amount for its price at *dtime*
+               minus its original cost, with the fees already substracted
+               from these proceeds.
+
+              - `total_proceeds`
+
+               are the total proceeds returned from this
+               sale, i.e. it includes the full *amount* (held for any amount
+               of time) at its price at *dtime*, with fees already
+               substracted. This value equals the base cost of any new
+               currency purchased with this sale.
 
         """
         self._check_order(dtime)

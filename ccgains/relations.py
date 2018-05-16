@@ -32,7 +32,7 @@ class CurrencyRelation(object):
         methods to exchange values between currencies, using
         historical exchange rates at specific times.
 
-        :param *args:
+        :param args:
             Any number of HistoricData objects. If multiple HistoricData
             objects are given with the same unit, only the last one
             in the list will be used. More/updated HistoricData
