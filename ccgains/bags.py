@@ -189,7 +189,8 @@ class BagFIFO(object):
         self.currency = str(base_currency).upper()
         self.relation = relation
         # The profit (or loss if negative), recorded in self.currency:
-        self.profit = Decimal(0)
+        # (dictionary of {str(year): profit})
+        self.profit = {}
         # dictionary of {exchange: list of bags}
         self.bags = {}
         # dictionary of {exchange: {currency: total amount}}:
@@ -234,6 +235,17 @@ class BagFIFO(object):
                 'was from %s, this one is from %s' % (
                         self._last_date, dtime))
         self._last_date = pd.Timestamp(dtime).tz_convert('UTC')
+
+    def _add_profit(self, dtime, profit):
+        """Adds *profit* to self.profit, classified by the year
+        given in *dtime*
+
+        """
+        if isinstance(dtime, (int, str)):
+            year = str(dtime)
+        else:
+            year = str(dtime.year)
+        self.profit[year] = self.profit.get(year, Decimal(0)) + profit
 
     def to_json(self, **kwargs):
         """Return a JSON formatted string representation of the current
@@ -512,7 +524,7 @@ class BagFIFO(object):
             prof, _ = self.pay(
                 dtime, currency, fee, exchange, fee_ratio=1,
                 report_info={'kind': 'withdrawal fee'})
-            self.profit += prof
+            self._add_profit(dtime, prof)
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
 
@@ -604,7 +616,7 @@ class BagFIFO(object):
                     del self.totals['in_transit'][currency]
             if not self.totals['in_transit']:
                 del self.totals['in_transit']
-            if not self.in_transit[currency]:
+            if currency in self.in_transit and not self.in_transit[currency]:
                 del self.in_transit[currency]
 
         if exchange not in self.totals:
@@ -620,7 +632,7 @@ class BagFIFO(object):
             prof, _ = self.pay(
                     dtime, currency, fee, exchange, fee_ratio=1,
                     report_info={'kind': 'deposit fee'})
-            self.profit += prof
+            self._add_profit(dtime, prof)
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
 
@@ -869,6 +881,10 @@ class BagFIFO(object):
         if trade.buyval < 0 or trade.sellval < 0 or trade.feeval < 0:
             self._abort(
                 'Negative values for buy, sell or fee amount not supported.')
+        if not str(trade.dtime.year) in self.profit:
+            # initialize profit for this year:
+            self.profit[str(trade.dtime.year)] = Decimal(0)
+
         if trade.sellcur == self.currency and trade.sellval != 0:
             # Paid for with our base currency, simply add new bag:
             # (The cost is directly translated to the base value
@@ -891,7 +907,7 @@ class BagFIFO(object):
                     trade.dtime, trade.feecur, trade.feeval, trade.exchange,
                     fee_ratio=1,
                     report_info={'kind': 'exchange fee'})
-                self.profit += prof
+                self._add_profit(trade.dtime, prof)
                 log.info("Taxable loss due to fees: %.3f %s",
                          prof, self.currency)
 
@@ -963,7 +979,7 @@ class BagFIFO(object):
                     'kind': 'sale',
                     'buy_currency': trade.buycur,
                     'buy_ratio': trade.buyval / trade.sellval})
-            self.profit += prof
+            self._add_profit(trade.dtime, prof)
 
             # Did we trade for another foreign/cryptocurrency?
             if trade.buycur != self.currency:

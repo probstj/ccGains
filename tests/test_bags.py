@@ -136,7 +136,7 @@ class TestBagFIFO(unittest.TestCase):
             self.log_bags(bagfifo)
             self.logger.info(
                     "Profit so far: %.2f %s\n",
-                    bagfifo.profit, bagfifo.currency)
+                    bagfifo.profit[str(day.year)], bagfifo.currency)
             current_budget = to_amount
             current_curr = to_curr
         return to_amount
@@ -157,7 +157,8 @@ class TestBagFIFO(unittest.TestCase):
             feelist=[(0, ''), (0, ''), (0, '')])
 
         # check correct profit:
-        self.assertEqual(proceeds - budget, bagfifo.profit)
+        self.assertEqual(
+            proceeds - budget, bagfifo.profit[str(self.rng[0].year)])
         # check that bagfifo is empty and cleaned up:
         self.assertFalse(bagfifo.totals)
         self.assertFalse(bagfifo.bags)
@@ -190,7 +191,9 @@ class TestBagFIFO(unittest.TestCase):
                         feelist=feelist)
 
                     # check correct profit:
-                    self.assertEqual(proceeds - budget, bagfifo.profit)
+                    self.assertEqual(
+                        proceeds - budget,
+                        bagfifo.profit[str(self.rng[0].year)])
                     # check that bagfifo is empty and cleaned up:
                     self.assertFalse(bagfifo.totals)
                     self.assertFalse(bagfifo.bags)
@@ -219,7 +222,8 @@ class TestBagFIFO(unittest.TestCase):
                     feelist=[(0, ''), (fee, fee_cur)])
 
                 self.assertEqual(
-                    bagfifo.bags[''][-1].cost, budget + bagfifo.profit)
+                    bagfifo.bags[''][-1].cost,
+                    budget + bagfifo.profit[str(self.rng[0].year)])
 
     def test_saving_loading(self):
         # Add handler to the logger (uncomment this to enable output)
@@ -250,7 +254,8 @@ class TestBagFIFO(unittest.TestCase):
             bagfifo.process_trade(t)
             self.log_bags(bagfifo)
             self.logger.info("Profit so far: %.2f %s\n",
-                             bagfifo.profit, bagfifo.currency)
+                             bagfifo.profit[str(day1.year)],
+                             bagfifo.currency)
 
         # save state
         outfile = StringIO()
@@ -284,7 +289,7 @@ class TestBagFIFO(unittest.TestCase):
             bf2.process_trade(t)
             self.log_bags(bagfifo)
             self.logger.info("Profit so far: %.2f %s\n",
-                             bagfifo.profit, bagfifo.currency)
+                             bagfifo.profit[str(day3.year)], bagfifo.currency)
 
         # Now, bags lists should be empty, but we still need to
         # check the report manually:

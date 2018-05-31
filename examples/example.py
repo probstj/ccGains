@@ -237,7 +237,7 @@ def main():
         # more logging:
         log_bags(bf)
         logger.info("Totals: %s", str(bf.totals))
-        logger.info("Gains: %s %.12f\n" % (bf.currency, bf.profit))
+        logger.info("Gains (in %s): %s\n" % (bf.currency, str(bf.profit)))
 
 
     #########################################################################
