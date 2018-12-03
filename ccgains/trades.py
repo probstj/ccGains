@@ -89,6 +89,25 @@ TPLOC_BISQ_TRADES = [
 TPLOC_BISQ_TRANSACTIONS = [
         1, 0, 'BTC', 4, '', '0', -1, -1, "Bitsquare/Bisq", '', 2]
 
+# Trade parameters in csv from Trezor wallet
+# The currency is not present in the file, thus it has to be supplied by
+# the user
+TPLOC_TREZOR_WALLET = {
+    'kind': lambda cols:
+        'Deposit' if cols[4] == 'IN' else 'Withdrawal',
+    'dtime': lambda cols:
+        cols[0] + ' ' + cols[1],
+    'buy_currency': '',
+    'buy_amount': lambda cols:
+        abs(Decimal(cols[6])) if cols[4] == 'IN' else '',
+    'sell_currency': '',
+    'sell_amount': lambda cols:
+        abs(Decimal(cols[6])) if cols[4] == 'OUT' else '',
+    'fee_currency': '',
+    'fee_amount': lambda cols:
+        Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
+    'exchange': 'Trezor', 'mark': 2, 'comment': 3}
+
 
 def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
@@ -812,6 +831,39 @@ class TradeHistory(object):
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
         self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+
+    def append_trezor_csv(self, file_name, currency, skiprows=1,
+                          default_timezone=None):
+        """Import trades from a csv file exported from the Trezor wallet
+        and add them to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, i.e. the local timezone,
+            which is what Bitcoin.de exports at time of writing, but
+            it might change in future.
+
+        :param currency:
+            The currency corresponding to the file to be imported.
+            The Trezor wallet exports the information of each wallet
+            separately, but the information of the currency is not supplied.
+            Therefore, the user has to supply the crypto currency accordingly
+            when importing the csv file.
+
+        """
+        # Set the crypto currency
+        TPLOC_TREZOR_WALLET['buy_currency'] = currency
+        TPLOC_TREZOR_WALLET['sell_currency'] = currency
+        TPLOC_TREZOR_WALLET['fee_currency'] = currency
+
+        self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
+                        skiprows=skiprows, default_timezone=default_timezone)
 
     def export_to_csv(
             self, path_or_buf=None, year=None,
