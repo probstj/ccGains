@@ -27,7 +27,7 @@
 import pandas as pd
 from decimal import Decimal
 from dateutil import tz
-from operator import attrgetter
+#from operator import attrgetter
 
 import logging
 log = logging.getLogger(__name__)
@@ -88,6 +88,25 @@ TPLOC_BISQ_TRADES = [
         -1, -1, 'Bitsquare/Bisq', '', 0]
 TPLOC_BISQ_TRANSACTIONS = [
         1, 0, 'BTC', 4, '', '0', -1, -1, "Bitsquare/Bisq", '', 2]
+
+# Trade parameters in csv from Trezor wallet
+# The currency is not present in the file, thus it has to be supplied by
+# the user
+TPLOC_TREZOR_WALLET = {
+    'kind': lambda cols:
+        'Deposit' if cols[4] == 'IN' else 'Withdrawal',
+    'dtime': lambda cols:
+        cols[0] + ' ' + cols[1],
+    'buy_currency': '',
+    'buy_amount': lambda cols:
+        abs(Decimal(cols[6])) if cols[4] == 'IN' else '',
+    'sell_currency': '',
+    'sell_amount': lambda cols:
+        abs(Decimal(cols[6])) if cols[4] == 'OUT' else '',
+    'fee_currency': '',
+    'fee_amount': lambda cols:
+        Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
+    'exchange': 'Trezor', 'mark': 2, 'comment': 3}
 
 
 def _parse_trade(str_list, param_locs, default_timezone):
@@ -336,6 +355,24 @@ class TradeHistory(object):
     def __str__(self):
         return self.to_data_frame().to_string()
 
+    def _trade_sort_key(self, trade):
+        """Utility function used for key parameter in python's
+        list.sort method when sorting a list of Trade objects.
+
+        """
+        dtime = trade.dtime
+        if trade.buyval > 0 and (not trade.sellval or not trade.sellcur):
+            # This seems to be a deposit.
+            # Some wallets are so quick, they'll register a deposit
+            # at exactly the same time than the withdrawal went out
+            # on the sending wallet. This in turn will make the
+            # order of withdrawal and deposit unclear in the
+            # sorted list of trades. Here we add 1 ns to every
+            # deposit, so they will always be sorted in after a
+            # simultaneous withdrawal:
+            dtime += pd.Timedelta(1, 'ns')
+        return dtime
+
     def add_missing_transaction_fees(self, raise_on_error=True):
         """Some exchanges do not include withdrawal fees in their
         exported csv files. This will try to add these missing fees
@@ -486,7 +523,7 @@ class TradeHistory(object):
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def append_ccgains_csv(
             self, file_name, delimiter=',', skiprows=1,
@@ -583,7 +620,7 @@ class TradeHistory(object):
                     grouplist.append(trade)
                 if groupid != trade.comment or i == num - 1:
                     # time to merge trades in grouplist and place in tlist
-                    grouplist.sort(key=attrgetter('dtime'), reverse=True)
+                    grouplist.sort(key=self._trade_sort_key, reverse=True)
                     last = grouplist[0]
                     for t in grouplist[1:]:
                         if (last.kind != t.kind
@@ -625,7 +662,7 @@ class TradeHistory(object):
                      len(self.tlist) - numtrades, file_name)
 
             # trades must be sorted:
-            self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+            self.tlist.sort(key=self._trade_sort_key, reverse=False)
             return
         else:
             # normal loading, using the proper plocs:
@@ -689,8 +726,8 @@ class TradeHistory(object):
             line = csvline.split(delimiter)
             txl.append(_parse_trade(line, TPLOC_BISQ_TRANSACTIONS,
                                     default_timezone))
-        tdl.sort(key=attrgetter('dtime'), reverse=False)
-        txl.sort(key=attrgetter('dtime'), reverse=False)
+        tdl.sort(key=self._trade_sort_key, reverse=False)
+        txl.sort(key=self._trade_sort_key, reverse=False)
 
         # For each trade from tdl, find the accompanying data from
         # transactions list txl:
@@ -756,7 +793,7 @@ class TradeHistory(object):
                  len(self.tlist) - numtrades,
                  trade_file_name, transactions_file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     # alias:
     append_bitsquare_csv = append_bisq_csv
@@ -811,7 +848,40 @@ class TradeHistory(object):
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
+
+    def append_trezor_csv(self, file_name, currency, skiprows=1,
+                          default_timezone=None):
+        """Import trades from a csv file exported from the Trezor wallet
+        and add them to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, i.e. the local timezone,
+            which is what Bitcoin.de exports at time of writing, but
+            it might change in future.
+
+        :param currency:
+            The currency corresponding to the file to be imported.
+            The Trezor wallet exports the information of each wallet
+            separately, but the information of the currency is not supplied.
+            Therefore, the user has to supply the crypto currency accordingly
+            when importing the csv file.
+
+        """
+        # Set the crypto currency
+        TPLOC_TREZOR_WALLET['buy_currency'] = currency
+        TPLOC_TREZOR_WALLET['sell_currency'] = currency
+        TPLOC_TREZOR_WALLET['fee_currency'] = currency
+
+        self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
+                        skiprows=skiprows, default_timezone=default_timezone)
 
     def export_to_csv(
             self, path_or_buf=None, year=None,
