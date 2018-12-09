@@ -27,7 +27,7 @@
 import pandas as pd
 from decimal import Decimal
 from dateutil import tz
-from operator import attrgetter
+#from operator import attrgetter
 
 import logging
 log = logging.getLogger(__name__)
@@ -355,6 +355,24 @@ class TradeHistory(object):
     def __str__(self):
         return self.to_data_frame().to_string()
 
+    def _trade_sort_key(self, trade):
+        """Utility function used for key parameter in python's
+        list.sort method when sorting a list of Trade objects.
+
+        """
+        dtime = trade.dtime
+        if trade.buyval > 0 and (not trade.sellval or not trade.sellcur):
+            # This seems to be a deposit.
+            # Some wallets are so quick, they'll register a deposit
+            # at exactly the same time than the withdrawal went out
+            # on the sending wallet. This in turn will make the
+            # order of withdrawal and deposit unclear in the
+            # sorted list of trades. Here we add 1 ns to every
+            # deposit, so they will always be sorted in after a
+            # simultaneous withdrawal:
+            dtime += pd.Timedelta(1, 'ns')
+        return dtime
+
     def add_missing_transaction_fees(self, raise_on_error=True):
         """Some exchanges do not include withdrawal fees in their
         exported csv files. This will try to add these missing fees
@@ -505,7 +523,7 @@ class TradeHistory(object):
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def append_ccgains_csv(
             self, file_name, delimiter=',', skiprows=1,
@@ -602,7 +620,7 @@ class TradeHistory(object):
                     grouplist.append(trade)
                 if groupid != trade.comment or i == num - 1:
                     # time to merge trades in grouplist and place in tlist
-                    grouplist.sort(key=attrgetter('dtime'), reverse=True)
+                    grouplist.sort(key=self._trade_sort_key, reverse=True)
                     last = grouplist[0]
                     for t in grouplist[1:]:
                         if (last.kind != t.kind
@@ -644,7 +662,7 @@ class TradeHistory(object):
                      len(self.tlist) - numtrades, file_name)
 
             # trades must be sorted:
-            self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+            self.tlist.sort(key=self._trade_sort_key, reverse=False)
             return
         else:
             # normal loading, using the proper plocs:
@@ -708,8 +726,8 @@ class TradeHistory(object):
             line = csvline.split(delimiter)
             txl.append(_parse_trade(line, TPLOC_BISQ_TRANSACTIONS,
                                     default_timezone))
-        tdl.sort(key=attrgetter('dtime'), reverse=False)
-        txl.sort(key=attrgetter('dtime'), reverse=False)
+        tdl.sort(key=self._trade_sort_key, reverse=False)
+        txl.sort(key=self._trade_sort_key, reverse=False)
 
         # For each trade from tdl, find the accompanying data from
         # transactions list txl:
@@ -775,7 +793,7 @@ class TradeHistory(object):
                  len(self.tlist) - numtrades,
                  trade_file_name, transactions_file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     # alias:
     append_bitsquare_csv = append_bisq_csv
@@ -830,7 +848,7 @@ class TradeHistory(object):
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def append_trezor_csv(self, file_name, currency, skiprows=1,
                           default_timezone=None):
