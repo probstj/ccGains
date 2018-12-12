@@ -38,3 +38,31 @@ TPLOC_BINANCE_TRADES = {
     'fee_amount': 6,
     'exchange': 'Binance',
 }
+# Binance deposit/withdrawal csv output has following columns:
+# Date, Coin, Amount, TransactionFee, Address, TXID, SourceAddress, PaymentID, Status
+TPLOC_BINANCE_DEPOSITS = {
+    'kind': "Deposit",
+    'dtime': 0,
+    'buy_currency': 1,
+    'buy_amount': 2,
+    'sell_currency': '',
+    'sell_amount': '0',
+    'fee_currency': 1,
+    'fee_amount': 3,
+    'exchange': "Binance",
+    'mark': -1,
+    'comment': 5
+}
+TPLOC_BINANCE_WITHDRAWALS = {
+    'kind': "Withdrawal",
+    'dtime': 0,
+    'buy_currency': '',
+    'buy_amount': '0',
+    'sell_currency': 1,
+    'sell_amount': 2,
+    'fee_currency': 1,
+    'fee_amount': 3,
+    'exchange': "Binance",
+    'mark': -1,
+    'comment': 5
+}
