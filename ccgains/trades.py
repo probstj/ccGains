@@ -48,6 +48,9 @@ log = logging.getLogger(__name__)
 # (Note that buy and sell values may be swapped if one
 # of them is negative)
 
+# Binance trade csv parameters
+from .binance_util import TPLOC_BINANCE_TRADES
+
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
 TPLOC_POLONIEX_TRADES = {
@@ -548,6 +551,17 @@ class TradeHistory(object):
             delimiter=delimiter,
             skiprows=skiprows,
             default_timezone=default_timezone)
+
+    def append_binance_csv(
+            self, file_name, delimiter=',', skiprows=1,
+            default_timezone=tz.tzutc()):
+        return self.append_csv(
+            file_name=file_name,
+            param_locs=TPLOC_BINANCE_TRADES,
+            delimiter=delimiter,
+            skiprows=skiprows,
+            default_timezone=default_timezone
+        )
 
     def append_poloniex_csv(
             self, file_name, which_data='trades', condense_trades=False,
