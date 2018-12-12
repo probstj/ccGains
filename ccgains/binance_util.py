@@ -34,7 +34,7 @@ TPLOC_BINANCE_TRADES = {
     'buy_amount': lambda cols: [Decimal(cols[4]), Decimal(cols[5])][(cols[2].upper() == 'SELL')],
     'sell_currency': lambda cols: currency_for(cols, 'sell'),
     'sell_amount': lambda cols: [Decimal(cols[4]), Decimal(cols[5])][(cols[2].upper() == 'BUY')],
-    'fee_currency': 5,
-    'fee_amount': 4,
+    'fee_currency': 7,
+    'fee_amount': 6,
     'exchange': 'Binance',
 }
