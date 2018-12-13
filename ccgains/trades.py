@@ -108,6 +108,41 @@ TPLOC_TREZOR_WALLET = {
         Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
     'exchange': 'Trezor', 'mark': 2, 'comment': 3}
 
+# Coinbase (combined transactions & trades)
+TPLOC_COINBASE_TRADE = {
+    'kind': 1,
+    'dtime': 0,
+    'buy_currency': lambda cols:
+        cols[2] if cols[1].upper() == 'BUY' else cols[7],
+    'buy_amount': lambda cols:
+        Decimal(cols[3]) if cols[1].upper() == 'BUY' else Decimal(cols[5]),
+    'sell_currency': lambda cols:
+        cols[2] if cols[1].upper() == 'SELL' else cols[7],
+    'sell_amount': lambda cols:
+        Decimal(cols[3]) if cols[1].upper() == 'SELL' else Decimal(cols[5]),
+    'fee_currency': 7,
+    'fee_amount': lambda cols:
+        Decimal(cols[5]) - Decimal(cols[3]) * Decimal(cols[4]),
+    'mark': -1,
+    'comment': 6
+}
+TPLOC_COINBASE_TRANSFER = {
+    'kind': 1,
+    'dtime': 0,
+    'buy_currency': lambda cols:
+        '' if cols[1].upper() == 'SEND' else cols[2],
+    'buy_amount': lambda cols:
+        '0' if cols[1].upper() == 'SEND' else Decimal(cols[3]),
+    'sell_currency': lambda cols:
+        '' if cols[1].upper() == 'RECEIVE' else cols[2],
+    'sell_amount': lambda cols:
+        '0' if cols[1].upper() == 'RECEIVE' else Decimal(cols[3]),
+    'fee_currency': -1,
+    'fee_amount': -1,
+    'mark': -1,
+    'comment': 6
+}
+
 
 def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
@@ -882,6 +917,37 @@ class TradeHistory(object):
 
         self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
+
+    def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
+                            delimiter=',', default_timezone=None):
+        # If kind==buy but no buy_currency, find it from headers
+        with open(file_name) as f:
+            csv = f.readlines()
+        if currency is None:
+            quote_currency = csv[3].split(sep=delimiter)[4].split(' ')[0]
+        else:
+            quote_currency = currency
+        print(f"Coinbase quote currency: {quote_currency}")
+
+        if default_timezone is None:
+            default_timezone = tz.tzlocal()
+
+        tlist = []
+        for csvline in csv[skiprows:]:
+            line = csvline.split(sep=delimiter)[:7]
+            line.append(quote_currency)
+            print('**', line)
+            if line[1].upper() in ['BUY', 'SELL']:
+                tlist.append(_parse_trade(line, TPLOC_COINBASE_TRADE, default_timezone))
+            elif line[1].upper() in ['SEND', 'RECEIVE']:
+                tlist.append(_parse_trade(line, TPLOC_COINBASE_TRANSFER, default_timezone))
+        numtrades = len(tlist)
+        self.tlist.extend(tlist)
+        log.info("Loaded %i transactions from %s",
+                 len(self.tlist) - numtrades, file_name)
+        # trades must be sorted:
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
+
 
     def export_to_csv(
             self, path_or_buf=None, year=None,
