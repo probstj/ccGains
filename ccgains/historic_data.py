@@ -548,7 +548,6 @@ class HistoricDataAPIBinance(HistoricData):
                         'limit': 1000})
         except requests.ConnectionError:
             raise self.connection_error
-        print('Status: ', req.status_code)
         if req.status_code in [429, 418]:
             raise ConnectionError('Binance Rate limits exceeded')
         df = self._req_to_df(req)
@@ -564,7 +563,6 @@ class HistoricDataAPIBinance(HistoricData):
                             'limit': 1000})
             except requests.ConnectionError:
                 raise self.connection_error
-            print('Status: ', req.status_code)
             if req.status_code in [429, 418]:
                 raise ConnectionError('Binance Rate limits exceeded')
             df = df.append(self._req_to_df(req))
