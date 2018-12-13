@@ -48,6 +48,9 @@ log = logging.getLogger(__name__)
 # (Note that buy and sell values may be swapped if one
 # of them is negative)
 
+# Binance trade csv parameters
+from .binance_util import TPLOC_BINANCE_TRADES, TPLOC_BINANCE_WITHDRAWALS, TPLOC_BINANCE_DEPOSITS
+
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
 TPLOC_POLONIEX_TRADES = {
@@ -260,9 +263,13 @@ class Trade(object):
         if (self.feeval > 0
                 and self.feecur != buy_currency
                 and self.feecur != sell_currency):
-            raise ValueError(
-                    'fee_currency must match either buy_currency or '
-                    'sell_currency')
+            if self.feecur != 'BNB':
+                print(self.feecur)
+                raise ValueError(
+                        'fee_currency must match either buy_currency or '
+                        'sell_currency')
+            else:
+                log.warning('fee_currency is BNB, not either buy or sell currency')
 
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
@@ -548,6 +555,28 @@ class TradeHistory(object):
             delimiter=delimiter,
             skiprows=skiprows,
             default_timezone=default_timezone)
+
+    def append_binance_csv(
+            self, file_name, which_data='trades', delimiter=',',
+            skiprows=1,  default_timezone=tz.tzutc()):
+        wdata = which_data[:5].lower()
+        if wdata not in ['trade', 'withd', 'depos']:
+            raise ValueError(
+                '`which_data` must be one of "trades", '
+                '"widhtrawals" or "deposits".')
+        if wdata == 'withd':
+            plocs = TPLOC_BINANCE_WITHDRAWALS
+        elif wdata == 'depos':
+            plocs = TPLOC_BINANCE_DEPOSITS
+        else:
+            plocs = TPLOC_BINANCE_TRADES
+        return self.append_csv(
+            file_name=file_name,
+            param_locs=plocs,
+            delimiter=delimiter,
+            skiprows=skiprows,
+            default_timezone=default_timezone
+        )
 
     def append_poloniex_csv(
             self, file_name, which_data='trades', condense_trades=False,
