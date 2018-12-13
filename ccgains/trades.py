@@ -27,7 +27,7 @@
 import pandas as pd
 from decimal import Decimal
 from dateutil import tz
-from operator import attrgetter
+#from operator import attrgetter
 
 import logging
 log = logging.getLogger(__name__)
@@ -107,6 +107,79 @@ TPLOC_TREZOR_WALLET = {
     'fee_amount': lambda cols:
         Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
     'exchange': 'Trezor', 'mark': 2, 'comment': 3}
+
+# Coinbase (combined transactions & trades)
+TPLOC_COINBASE_TRADE = {
+    'kind': 1,
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    cols[2] if cols[1].upper() == 'BUY' else cols[7],
+    'buy_amount': lambda cols:
+    Decimal(cols[3]) if cols[1].upper() == 'BUY' else Decimal(cols[5]),
+    'sell_currency': lambda cols:
+    cols[2] if cols[1].upper() == 'SELL' else cols[7],
+    'sell_amount': lambda cols:
+    Decimal(cols[3]) if cols[1].upper() == 'SELL' else Decimal(cols[5]),
+    'fee_currency': 7,
+    'fee_amount': lambda cols:
+    Decimal(cols[5]) - Decimal(cols[3]) * Decimal(cols[4]),
+    'exchange': 'Coinbase',
+    'mark': -1,
+    'comment': 6
+}
+TPLOC_COINBASE_TRANSFER = {
+    'kind': 1,
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    '' if cols[1].upper() == 'SEND' else cols[2],
+    'buy_amount': lambda cols:
+    '0' if cols[1].upper() == 'SEND' else Decimal(cols[3]),
+    'sell_currency': lambda cols:
+    '' if cols[1].upper() == 'RECEIVE' else cols[2],
+    'sell_amount': lambda cols:
+    '0' if cols[1].upper() == 'RECEIVE' else Decimal(cols[3]),
+    'fee_currency': -1,
+    'fee_amount': -1,
+    'exchange': 'Coinbase',
+    'mark': -1,
+    'comment': 6
+}
+TPLOC_BITTREX_TRADES = {
+    'kind': 2,
+    'dtime': 8,
+    'buy_currency': lambda cols:
+        cols[1].split('-')[cols[2].split('_')[1] == 'BUY'],
+    'buy_amount': lambda cols:
+        Decimal(cols[3]) if cols[2].split('_')[1] == 'BUY' else Decimal(cols[6]) - Decimal(cols[5]),
+    'sell_currency': lambda cols:
+        cols[1].split('-')[cols[2].split('_')[1] == 'SELL'],
+    'sell_amount': lambda cols:
+        Decimal(cols[3]) if cols[2].split('_')[1] == 'SELL' else Decimal(cols[6]) + Decimal(cols[5]),
+    'fee_currency': lambda cols:
+        cols[1].split('-')[0],
+    'fee_amount': 5,
+    'exchange': 'Bittrex',
+    'mark': -1,
+    'comment': 0
+
+}
+TPLOC_BITTREX_TRANSFER = {
+    'kind': 1,
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    '' if cols[1].upper() == 'WITHDRAWAL' else cols[2],
+    'buy_amount': lambda cols:
+    '0' if cols[1].upper() == 'WITHDRAWAL' else Decimal(cols[3]),
+    'sell_currency': lambda cols:
+    '' if cols[1].upper() == 'DEPOSIT' else cols[2],
+    'sell_amount': lambda cols:
+    '0' if cols[1].upper() == 'DEPOSIT' else Decimal(cols[3]),
+    'fee_currency': -1,
+    'fee_amount': -1,
+    'exchange': 'Bittrex',
+    'mark': -1,
+    'comment': 4
+}
 
 
 def _parse_trade(str_list, param_locs, default_timezone):
@@ -355,6 +428,24 @@ class TradeHistory(object):
     def __str__(self):
         return self.to_data_frame().to_string()
 
+    def _trade_sort_key(self, trade):
+        """Utility function used for key parameter in python's
+        list.sort method when sorting a list of Trade objects.
+
+        """
+        dtime = trade.dtime
+        if trade.buyval > 0 and (not trade.sellval or not trade.sellcur):
+            # This seems to be a deposit.
+            # Some wallets are so quick, they'll register a deposit
+            # at exactly the same time than the withdrawal went out
+            # on the sending wallet. This in turn will make the
+            # order of withdrawal and deposit unclear in the
+            # sorted list of trades. Here we add 1 ns to every
+            # deposit, so they will always be sorted in after a
+            # simultaneous withdrawal:
+            dtime += pd.Timedelta(1, 'ns')
+        return dtime
+
     def add_missing_transaction_fees(self, raise_on_error=True):
         """Some exchanges do not include withdrawal fees in their
         exported csv files. This will try to add these missing fees
@@ -505,7 +596,7 @@ class TradeHistory(object):
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def append_ccgains_csv(
             self, file_name, delimiter=',', skiprows=1,
@@ -602,7 +693,7 @@ class TradeHistory(object):
                     grouplist.append(trade)
                 if groupid != trade.comment or i == num - 1:
                     # time to merge trades in grouplist and place in tlist
-                    grouplist.sort(key=attrgetter('dtime'), reverse=True)
+                    grouplist.sort(key=self._trade_sort_key, reverse=True)
                     last = grouplist[0]
                     for t in grouplist[1:]:
                         if (last.kind != t.kind
@@ -644,7 +735,7 @@ class TradeHistory(object):
                      len(self.tlist) - numtrades, file_name)
 
             # trades must be sorted:
-            self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+            self.tlist.sort(key=self._trade_sort_key, reverse=False)
             return
         else:
             # normal loading, using the proper plocs:
@@ -708,8 +799,8 @@ class TradeHistory(object):
             line = csvline.split(delimiter)
             txl.append(_parse_trade(line, TPLOC_BISQ_TRANSACTIONS,
                                     default_timezone))
-        tdl.sort(key=attrgetter('dtime'), reverse=False)
-        txl.sort(key=attrgetter('dtime'), reverse=False)
+        tdl.sort(key=self._trade_sort_key, reverse=False)
+        txl.sort(key=self._trade_sort_key, reverse=False)
 
         # For each trade from tdl, find the accompanying data from
         # transactions list txl:
@@ -775,7 +866,7 @@ class TradeHistory(object):
                  len(self.tlist) - numtrades,
                  trade_file_name, transactions_file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     # alias:
     append_bitsquare_csv = append_bisq_csv
@@ -830,7 +921,7 @@ class TradeHistory(object):
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
-        self.tlist.sort(key=attrgetter('dtime'), reverse=False)
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def append_trezor_csv(self, file_name, currency, skiprows=1,
                           default_timezone=None):
@@ -864,6 +955,63 @@ class TradeHistory(object):
 
         self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
+
+    def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
+                            delimiter=',', default_timezone=None):
+        with open(file_name) as f:
+            csv = f.readlines()
+        if currency is None:
+            quote_currency = csv[3].split(sep=delimiter)[4].split(' ')[0]
+        else:
+            quote_currency = currency
+
+        if default_timezone is None:
+            default_timezone = tz.tzlocal()
+
+        tlist = []
+        for csvline in csv[skiprows:]:
+            line = csvline.split(sep=delimiter)[:7]
+            line.append(quote_currency)
+            if line[1].upper() in ['BUY', 'SELL']:
+                tlist.append(_parse_trade(line, TPLOC_COINBASE_TRADE, default_timezone))
+            elif line[1].upper() in ['SEND', 'RECEIVE']:
+                tlist.append(_parse_trade(line, TPLOC_COINBASE_TRANSFER, default_timezone))
+        numtrades = len(tlist)
+        self.tlist.extend(tlist)
+        log.info("Loaded %i transactions from %s",
+                 len(self.tlist) - numtrades, file_name)
+        # trades must be sorted:
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
+
+    def append_bittrex_csv(self, file_name, which_data='trades', skiprows=1, delimiter=',',
+                           default_timezone=None):
+        if which_data.lower() not in ['trades', 'transfers']:
+            raise ValueError(
+                '`which_data` must be one of "trades" or'
+                '"transfers"')
+        if which_data.lower() == 'trades':
+            plocs = TPLOC_BITTREX_TRADES
+        else:
+            plocs = TPLOC_BITTREX_TRANSFER
+
+        if default_timezone is None:
+            default_timezone = tz.tzlocal()
+
+        tlist = []
+        with open(file_name, encoding='ascii') as f:
+            csv = f.readlines()
+        for csvline in csv[skiprows:]:
+            line = csvline.split(sep=delimiter)
+            if len(line[1]) < 4:
+                continue
+            else:
+                tlist.append(_parse_trade(line, plocs, default_timezone))
+        numtrades = len(tlist)
+        self.tlist.extend(tlist)
+        log.info("Loaded %i transactions from %s",
+                 len(self.tlist) - numtrades, file_name)
+        # Trades must be sorted
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def export_to_csv(
             self, path_or_buf=None, year=None,
