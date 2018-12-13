@@ -27,9 +27,10 @@
 import pandas as pd
 from decimal import Decimal
 from dateutil import tz
-#from operator import attrgetter
+# from operator import attrgetter
 
 import logging
+
 log = logging.getLogger(__name__)
 
 ###########################################################
@@ -56,10 +57,10 @@ TPLOC_POLONIEX_TRADES = {
     'buy_amount': 10,
     'sell_currency': lambda cols: cols[1].split('/')[1],
     'sell_amount': 9,
-    'fee_currency': lambda cols: cols[1].split('/')[cols[3]=='Sell'],
+    'fee_currency': lambda cols: cols[1].split('/')[cols[3] == 'Sell'],
     'fee_amount': lambda cols:
-        Decimal(cols[[5, 6][cols[3]=='Sell']])
-        - Decimal(cols[[10, 9][cols[3]=='Sell']]),
+    Decimal(cols[[5, 6][cols[3] == 'Sell']])
+    - Decimal(cols[[10, 9][cols[3] == 'Sell']]),
     'exchange': 'Poloniex', 'mark': 3, 'comment': 8}
 # 'comment' is the wallet address withdrawn to:
 TPLOC_POLONIEX_WITHDRAWALS = [
@@ -75,37 +76,37 @@ TPLOC_BITCOINDE = {
     'sell_currency': 'EUR', 'sell_amount': 8,
     'fee_currency': 'BTC',
     'fee_amount': lambda cols:
-        (Decimal(cols[5]) - Decimal(cols[7])) / 2 if cols[5] else 0,
+    (Decimal(cols[5]) - Decimal(cols[7])) / 2 if cols[5] else 0,
     'exchange': 'Bitcoin.de', 'mark': -1, 'comment': 3}
 
 # Trade parameters in csv from bisq or Bitsquare:
 # 'comment' is the trade ID:
 TPLOC_BISQ_TRADES = [
-        5, 1, lambda cols: cols[2].split(' ')[1],
-        lambda cols: cols[2].split(' ')[0],
-        lambda cols: cols[4].split(' ')[1],
-        lambda cols: cols[4].split(' ')[0],
-        -1, -1, 'Bitsquare/Bisq', '', 0]
+    5, 1, lambda cols: cols[2].split(' ')[1],
+    lambda cols: cols[2].split(' ')[0],
+    lambda cols: cols[4].split(' ')[1],
+    lambda cols: cols[4].split(' ')[0],
+    -1, -1, 'Bitsquare/Bisq', '', 0]
 TPLOC_BISQ_TRANSACTIONS = [
-        1, 0, 'BTC', 4, '', '0', -1, -1, "Bitsquare/Bisq", '', 2]
+    1, 0, 'BTC', 4, '', '0', -1, -1, "Bitsquare/Bisq", '', 2]
 
 # Trade parameters in csv from Trezor wallet
 # The currency is not present in the file, thus it has to be supplied by
 # the user
 TPLOC_TREZOR_WALLET = {
     'kind': lambda cols:
-        'Deposit' if cols[4] == 'IN' else 'Withdrawal',
+    'Deposit' if cols[4] == 'IN' else 'Withdrawal',
     'dtime': lambda cols:
-        cols[0] + ' ' + cols[1],
+    cols[0] + ' ' + cols[1],
     'buy_currency': '',
     'buy_amount': lambda cols:
-        abs(Decimal(cols[6])) if cols[4] == 'IN' else '',
+    abs(Decimal(cols[6])) if cols[4] == 'IN' else '',
     'sell_currency': '',
     'sell_amount': lambda cols:
-        abs(Decimal(cols[6])) if cols[4] == 'OUT' else '',
+    abs(Decimal(cols[6])) if cols[4] == 'OUT' else '',
     'fee_currency': '',
     'fee_amount': lambda cols:
-        Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
+    Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
     'exchange': 'Trezor', 'mark': 2, 'comment': 3}
 
 # Coinbase (combined transactions & trades)
@@ -113,16 +114,17 @@ TPLOC_COINBASE_TRADE = {
     'kind': 1,
     'dtime': 0,
     'buy_currency': lambda cols:
-        cols[2] if cols[1].upper() == 'BUY' else cols[7],
+    cols[2] if cols[1].upper() == 'BUY' else cols[7],
     'buy_amount': lambda cols:
-        Decimal(cols[3]) if cols[1].upper() == 'BUY' else Decimal(cols[5]),
+    Decimal(cols[3]) if cols[1].upper() == 'BUY' else Decimal(cols[5]),
     'sell_currency': lambda cols:
-        cols[2] if cols[1].upper() == 'SELL' else cols[7],
+    cols[2] if cols[1].upper() == 'SELL' else cols[7],
     'sell_amount': lambda cols:
-        Decimal(cols[3]) if cols[1].upper() == 'SELL' else Decimal(cols[5]),
+    Decimal(cols[3]) if cols[1].upper() == 'SELL' else Decimal(cols[5]),
     'fee_currency': 7,
     'fee_amount': lambda cols:
-        Decimal(cols[5]) - Decimal(cols[3]) * Decimal(cols[4]),
+    Decimal(cols[5]) - Decimal(cols[3]) * Decimal(cols[4]),
+    'exchange': 'Coinbase',
     'mark': -1,
     'comment': 6
 }
@@ -130,17 +132,54 @@ TPLOC_COINBASE_TRANSFER = {
     'kind': 1,
     'dtime': 0,
     'buy_currency': lambda cols:
-        '' if cols[1].upper() == 'SEND' else cols[2],
+    '' if cols[1].upper() == 'SEND' else cols[2],
     'buy_amount': lambda cols:
-        '0' if cols[1].upper() == 'SEND' else Decimal(cols[3]),
+    '0' if cols[1].upper() == 'SEND' else Decimal(cols[3]),
     'sell_currency': lambda cols:
-        '' if cols[1].upper() == 'RECEIVE' else cols[2],
+    '' if cols[1].upper() == 'RECEIVE' else cols[2],
     'sell_amount': lambda cols:
-        '0' if cols[1].upper() == 'RECEIVE' else Decimal(cols[3]),
+    '0' if cols[1].upper() == 'RECEIVE' else Decimal(cols[3]),
     'fee_currency': -1,
     'fee_amount': -1,
+    'exchange': 'Coinbase',
     'mark': -1,
     'comment': 6
+}
+TPLOC_BITTREX_TRADES = {
+    'kind': 2,
+    'dtime': 8,
+    'buy_currency': lambda cols:
+        cols[1].split('-')[cols[2].split('_')[1] == 'BUY'],
+    'buy_amount': lambda cols:
+        Decimal(cols[3]) if cols[2].split('_')[1] == 'BUY' else Decimal(cols[6]) - Decimal(cols[5]),
+    'sell_currency': lambda cols:
+        cols[1].split('-')[cols[2].split('_')[1] == 'SELL'],
+    'sell_amount': lambda cols:
+        Decimal(cols[3]) if cols[2].split('_')[1] == 'SELL' else Decimal(cols[6]) + Decimal(cols[5]),
+    'fee_currency': lambda cols:
+        cols[1].split('-')[0],
+    'fee_amount': 5,
+    'exchange': 'Bittrex',
+    'mark': -1,
+    'comment': 0
+
+}
+TPLOC_BITTREX_TRANSFER = {
+    'kind': 1,
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    '' if cols[1].upper() == 'WITHDRAWAL' else cols[2],
+    'buy_amount': lambda cols:
+    '0' if cols[1].upper() == 'WITHDRAWAL' else Decimal(cols[3]),
+    'sell_currency': lambda cols:
+    '' if cols[1].upper() == 'DEPOSIT' else cols[2],
+    'sell_amount': lambda cols:
+    '0' if cols[1].upper() == 'DEPOSIT' else Decimal(cols[3]),
+    'fee_currency': -1,
+    'fee_amount': -1,
+    'exchange': 'Bittrex',
+    'mark': -1,
+    'comment': 4
 }
 
 
@@ -259,8 +298,8 @@ class Trade(object):
         self.sellcur = sell_currency
         if self.sellval < 0 and self.buyval < 0:
             raise ValueError(
-                    'Ambiguity: Only one of buy_amount or '
-                    'sell_amount may be negative')
+                'Ambiguity: Only one of buy_amount or '
+                'sell_amount may be negative')
         elif self.buyval < 0:
             self.buyval, self.sellval = self.sellval, abs(self.buyval)
             self.buycur, self.sellcur = self.sellcur, self.buycur
@@ -296,18 +335,18 @@ class Trade(object):
                 and self.feecur != buy_currency
                 and self.feecur != sell_currency):
             raise ValueError(
-                    'fee_currency must match either buy_currency or '
-                    'sell_currency')
+                'fee_currency must match either buy_currency or '
+                'sell_currency')
 
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
         for val in [
-                self.kind, self.dtime,
-                self.buycur, self.buyval,
-                self.sellcur, self.sellval,
-                self.feecur, self.feeval,
-                self.exchange, self.mark,
-                self.comment]:
+            self.kind, self.dtime,
+            self.buycur, self.buyval,
+            self.sellcur, self.sellval,
+            self.feecur, self.feeval,
+            self.exchange, self.mark,
+            self.comment]:
             if isinstance(val, Decimal):
                 strings.append("{0:0.8f}".format(float(val)))
             else:
@@ -337,6 +376,7 @@ class TradeHistory(object):
     and web applications.
 
     """
+
     def __init__(self):
         """`TradeHistory()` creates a TradeHistory object.
 
@@ -375,7 +415,7 @@ class TradeHistory(object):
 
         # Select year:
         if year is not None:
-            df = df[  (df['dtime'] >= str(year))
+            df = df[(df['dtime'] >= str(year))
                     & (df['dtime'] < str(year + 1))]
 
         # Convert timezones :
@@ -448,19 +488,19 @@ class TradeHistory(object):
                 # skip them here:
                 continue
             elif t.sellval > 0 and (not t.buycur or (not t.buyval
-                # In Poloniex' csv data, there is sometimes a trade listed
-                # with a non-zero sellval but with 0 buyval, because the
-                # latter amounts to less than 5e-9, which is rounded down.
-                # But it is not a withdrawal, so exclude it here:
-                and (t.exchange != 'Poloniex'
-                     or t.kind == 'Withdrawal'))):
-                    # This seems to be a withdrawal
-                    if t.feeval and t.sellcur != t.feecur:
-                        raise ValueError(
-                            'In trade %i, encountered withdrawal with '
-                            'different fee currency than withdrawn '
-                            'currency.' % i)
-                    translist.append((i, 'w', t.sellval - t.feeval))
+                                                     # In Poloniex' csv data, there is sometimes a trade listed
+                                                     # with a non-zero sellval but with 0 buyval, because the
+                                                     # latter amounts to less than 5e-9, which is rounded down.
+                                                     # But it is not a withdrawal, so exclude it here:
+                                                     and (t.exchange != 'Poloniex'
+                                                          or t.kind == 'Withdrawal'))):
+                # This seems to be a withdrawal
+                if t.feeval and t.sellcur != t.feecur:
+                    raise ValueError(
+                        'In trade %i, encountered withdrawal with '
+                        'different fee currency than withdrawn '
+                        'currency.' % i)
+                translist.append((i, 'w', t.sellval - t.feeval))
             elif t.buyval > 0 and (not t.sellval or not t.sellcur):
                 # This seems to be a deposit
                 translist.append((i, 'd', t.buyval))
@@ -482,13 +522,13 @@ class TradeHistory(object):
                     else:
                         if wamount < amount:
                             errs = (
-                                "The withdrawal from %s (%.8f %s, %s) is "
-                                "lower than the first deposit "
-                                "(%s, %.8f %s, %s) following it." % (
-                                    self[j].dtime, wamount, self[j].sellcur,
-                                    self[j].exchange,
-                                    self[i].dtime, amount, self[i].buycur,
-                                    self[i].exchange))
+                                    "The withdrawal from %s (%.8f %s, %s) is "
+                                    "lower than the first deposit "
+                                    "(%s, %.8f %s, %s) following it." % (
+                                        self[j].dtime, wamount, self[j].sellcur,
+                                        self[j].exchange,
+                                        self[i].dtime, amount, self[i].buycur,
+                                        self[i].exchange))
                             if raise_on_error:
                                 raise ValueError(errs)
                             else:
@@ -508,7 +548,7 @@ class TradeHistory(object):
             log.warning(
                 '%i withdrawals could not be matched with deposits, of which '
                 '%i have no assigned withdrawal fees.' % (
-                        num_unmatched, num_feeless))
+                    num_unmatched, num_feeless))
 
     def append_csv(
             self, file_name, param_locs=range(11), delimiter=',', skiprows=1,
@@ -616,8 +656,8 @@ class TradeHistory(object):
         wdata = which_data[:5].lower()
         if wdata not in ['trade', 'withd', 'depos']:
             raise ValueError(
-                    '`which_data` must be one of "trades", '
-                    '"widthdrawals" or "deposits".')
+                '`which_data` must be one of "trades", '
+                '"widthdrawals" or "deposits".')
         if wdata == 'withd':
             plocs = TPLOC_POLONIEX_WITHDRAWALS
             log.warning(
@@ -786,7 +826,7 @@ class TradeHistory(object):
                         # it as such:
                         # (Maybe bisq does it already? I haven't got a clue)
                         tx.kind = tx.kind.replace(
-                                    'Create', 'Canceled') + ' (Loss)'
+                            'Create', 'Canceled') + ' (Loss)'
                 elif tid in tx.kind:
                     # Hold the matching multisig deposit and payout:
                     found.append(tx)
@@ -820,10 +860,10 @@ class TradeHistory(object):
         self.tlist.extend(tdl)
         self.tlist.extend(txl)
         log.warning(
-                'Bitsquare/Bisq does not include withdrawal fees in exported '
-                'csv-files. Please include the fees manually, or call '
-                '`add_missing_transaction_fees` after transactions from all '
-                'relevant exchanges were imported.')
+            'Bitsquare/Bisq does not include withdrawal fees in exported '
+            'csv-files. Please include the fees manually, or call '
+            '`add_missing_transaction_fees` after transactions from all '
+            'relevant exchanges were imported.')
         log.info("Loaded %i transactions from %s and %s",
                  len(self.tlist) - numtrades,
                  trade_file_name, transactions_file_name)
@@ -920,14 +960,12 @@ class TradeHistory(object):
 
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
                             delimiter=',', default_timezone=None):
-        # If kind==buy but no buy_currency, find it from headers
         with open(file_name) as f:
             csv = f.readlines()
         if currency is None:
             quote_currency = csv[3].split(sep=delimiter)[4].split(' ')[0]
         else:
             quote_currency = currency
-        print(f"Coinbase quote currency: {quote_currency}")
 
         if default_timezone is None:
             default_timezone = tz.tzlocal()
@@ -936,7 +974,6 @@ class TradeHistory(object):
         for csvline in csv[skiprows:]:
             line = csvline.split(sep=delimiter)[:7]
             line.append(quote_currency)
-            print('**', line)
             if line[1].upper() in ['BUY', 'SELL']:
                 tlist.append(_parse_trade(line, TPLOC_COINBASE_TRADE, default_timezone))
             elif line[1].upper() in ['SEND', 'RECEIVE']:
@@ -948,6 +985,35 @@ class TradeHistory(object):
         # trades must be sorted:
         self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
+    def append_bittrex_csv(self, file_name, which_data='trades', skiprows=1, delimiter=',',
+                           default_timezone=None):
+        if which_data.lower() not in ['trades', 'transfers']:
+            raise ValueError(
+                '`which_data` must be one of "trades" or'
+                '"transfers"')
+        if which_data.lower() == 'trades':
+            plocs = TPLOC_BITTREX_TRADES
+        else:
+            plocs = TPLOC_BITTREX_TRANSFER
+
+        if default_timezone is None:
+            default_timezone = tz.tzlocal()
+
+        tlist = []
+        with open(file_name, encoding='ascii') as f:
+            csv = f.readlines()
+        for csvline in csv[skiprows:]:
+            line = csvline.split(sep=delimiter)
+            if len(line[1]) < 4:
+                continue
+            else:
+                tlist.append(_parse_trade(line, plocs, default_timezone))
+        numtrades = len(tlist)
+        self.tlist.extend(tlist)
+        log.info("Loaded %i transactions from %s",
+                 len(self.tlist) - numtrades, file_name)
+        # Trades must be sorted
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def export_to_csv(
             self, path_or_buf=None, year=None,
@@ -1052,22 +1118,22 @@ class TradeHistory(object):
         import babel.numbers, babel.dates
 
         env = jinja2.Environment(
-                loader=jinja2.PackageLoader('ccgains', 'templates'))
+            loader=jinja2.PackageLoader('ccgains', 'templates'))
         template = env.get_template(template_file)
 
         # Build formatters for all columns:
 
-#        amount_formatter = lambda x: babel.numbers.format_decimal(
-#            x, format=u'#,##0.00000000',
-#            locale=locale if locale else babel.numbers.LC_NUMERIC)
+        #        amount_formatter = lambda x: babel.numbers.format_decimal(
+        #            x, format=u'#,##0.00000000',
+        #            locale=locale if locale else babel.numbers.LC_NUMERIC)
 
         # The following is a hackish replacement for using
         # `lambda num: babel.numbers.format_decimal(num, u'#,##0.00000000')`
         # directly, which we cannot use, since `1E-8` is formatted as
-        #`u'1.E-8,00000000'`. While this bug is being fixed in babel,
+        # `u'1.E-8,00000000'`. While this bug is being fixed in babel,
         # we use our own algorithm, copied from
         # `babel.numbers.NumberPattern.apply`, with a modification:
-        fmt=u'#,##0.00000000'
+        fmt = u'#,##0.00000000'
         pattern = babel.numbers.parse_pattern(fmt)
         precision = Decimal('1.' + '1' * pattern.frac_prec[1])
 
@@ -1079,11 +1145,11 @@ class TradeHistory(object):
             # this line contains the bugfix:
             a, sep, b = format(abs(rounded), 'f').partition(".")
             number = (
-                pattern._format_int(
-                    a, pattern.int_prec[0],
-                    pattern.int_prec[1], locale)
-                + pattern._format_frac(
-                    b or '0', locale, pattern.frac_prec))
+                    pattern._format_int(
+                        a, pattern.int_prec[0],
+                        pattern.int_prec[1], locale)
+                    + pattern._format_frac(
+                b or '0', locale, pattern.frac_prec))
             return u'%s%s%s' % (
                 pattern.prefix[is_negative], number,
                 pattern.suffix[is_negative])
@@ -1092,8 +1158,8 @@ class TradeHistory(object):
             x, locale=locale if locale else babel.numbers.LC_NUMERIC)
 
         date_formatter = lambda x: babel.dates.format_datetime(
-                x, format='medium',
-                locale=locale if locale else babel.dates.LC_TIME)
+            x, format='medium',
+            locale=locale if locale else babel.dates.LC_TIME)
 
         # Get DataFrame:
         df = self.to_data_frame(year=year, convert_timezone=convert_timezone)
@@ -1106,8 +1172,8 @@ class TradeHistory(object):
                 ccol = '%s_currency' % name
                 if not acol in drop_columns:
                     df[acol] = (
-                        df[acol].apply(amount_formatter)
-                        + u'\xa0' + df[ccol])
+                            df[acol].apply(amount_formatter)
+                            + u'\xa0' + df[ccol])
                 if not ccol in drop_columns:
                     drop_columns.append(ccol)
 
@@ -1121,14 +1187,14 @@ class TradeHistory(object):
 
         # use custom column names:
         if custom_column_names is not None:
-            renamed = {k:v for k, v in zip(df.columns, custom_column_names)}
+            renamed = {k: v for k, v in zip(df.columns, custom_column_names)}
             df.columns = custom_column_names
         else:
-            renamed = {k:k for k in df.columns}
+            renamed = {k: k for k in df.columns}
 
         # default formatters:
         if merge_currencies:
-            formatters={
+            formatters = {
                 'kind': None,
                 'dtime': date_formatter,
                 'buy_amount': None,
@@ -1138,7 +1204,7 @@ class TradeHistory(object):
                 'mark': None,
                 'comment': None}
         else:
-            formatters={
+            formatters = {
                 'kind': None,
                 'dtime': date_formatter,
                 'buy_currency': None,
@@ -1152,7 +1218,7 @@ class TradeHistory(object):
                 'comment': None}
         # apply renaming and drop dropped columns:
         formatters = {
-                renamed[k]:v for k, v in formatters.items() if k in renamed}
+            renamed[k]: v for k, v in formatters.items() if k in renamed}
         # update with given formatters:
         if custom_formatters is not None:
             formatters.update(custom_formatters)
@@ -1167,30 +1233,30 @@ class TradeHistory(object):
             fromdate = babel.dates.date(year=year, month=1, day=1)
             todate = babel.dates.date(year=year, month=12, day=31)
         fmtdict = {
-            "year"    : str(year) if year else "",
+            "year": str(year) if year else "",
             "fromdate": babel.dates.format_date(
-                            fromdate,
-                            locale=locale if locale else babel.dates.LC_TIME),
-            "todate"  : babel.dates.format_date(
-                            todate,
-                            locale=locale if locale else babel.dates.LC_TIME)}
+                fromdate,
+                locale=locale if locale else babel.dates.LC_TIME),
+            "todate": babel.dates.format_date(
+                todate,
+                locale=locale if locale else babel.dates.LC_TIME)}
 
         # Rounding affects the babel.numbers.format_decimal formatter:
         # We'll floor everything:
         with babel.numbers.decimal.localcontext(
-            babel.numbers.decimal.Context(
-                rounding=babel.numbers.decimal.ROUND_DOWN)):
+                babel.numbers.decimal.Context(
+                    rounding=babel.numbers.decimal.ROUND_DOWN)):
             html = template.render({
-                'today'   : babel.dates.format_date(
-                             babel.dates.date.today(),
-                             locale=locale if locale else babel.dates.LC_TIME),
+                'today': babel.dates.format_date(
+                    babel.dates.date.today(),
+                    locale=locale if locale else babel.dates.LC_TIME),
                 'fontsize': font_size,
-                'caption' : caption % fmtdict,
-                'intro'   : intro % fmtdict,
-                'table'   : df.to_html(
-                                index=True, bold_rows=False,
-                                classes='align-right-columns',
-                                formatters=formatters),
+                'caption': caption % fmtdict,
+                'intro': intro % fmtdict,
+                'table': df.to_html(
+                    index=True, bold_rows=False,
+                    classes='align-right-columns',
+                    formatters=formatters),
                 'cols_to_align_right': cols_to_align_right})
 
         return html
@@ -1243,14 +1309,14 @@ class TradeHistory(object):
         """
         import weasyprint
         html = self.to_html(
-                year=year,
-                convert_timezone=convert_timezone,
-                font_size=font_size, template_file=template_file,
-                caption=caption, intro=intro,
-                drop_columns=drop_columns,
-                custom_column_names=custom_column_names,
-                custom_formatters=custom_formatters,
-                locale=locale)
+            year=year,
+            convert_timezone=convert_timezone,
+            font_size=font_size, template_file=template_file,
+            caption=caption, intro=intro,
+            drop_columns=drop_columns,
+            custom_column_names=custom_column_names,
+            custom_formatters=custom_formatters,
+            locale=locale)
         doc = weasyprint.HTML(string=html)
         doc.write_pdf(file_name)
         log.info("Saved trading history %sto %s",
