@@ -29,7 +29,7 @@ def currency_for(csv_line, side):
 # Binance trade csv output has following columns:
 # Date (UTC), Market, Type, Price, Amount, Total, Fee, Fee Coin
 TPLOC_BINANCE_TRADES = {
-    'kind': 'Trade', 'dtime': 0,
+    'kind': 2, 'dtime': 0,
     'buy_currency': lambda cols: currency_for(cols, 'buy'),
     'buy_amount': lambda cols: [Decimal(cols[4]), Decimal(cols[5])][(cols[2].upper() == 'SELL')],
     'sell_currency': lambda cols: currency_for(cols, 'sell'),
