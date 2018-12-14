@@ -110,7 +110,8 @@ TPLOC_TREZOR_WALLET = {
 
 # Coinbase (combined transactions & trades)
 TPLOC_COINBASE_TRADE = {
-    'kind': 1,
+    'kind': lambda cols:
+        'Buy' if cols[1].upper() == 'BUY' else 'Sell',
     'dtime': 0,
     'buy_currency': lambda cols:
     cols[2] if cols[1].upper() == 'BUY' else cols[7],
@@ -128,7 +129,8 @@ TPLOC_COINBASE_TRADE = {
     'comment': 6
 }
 TPLOC_COINBASE_TRANSFER = {
-    'kind': 1,
+    'kind': lambda cols:
+        'Withdrawal' if cols[1].upper() == 'SEND' else 'Deposit',
     'dtime': 0,
     'buy_currency': lambda cols:
     '' if cols[1].upper() == 'SEND' else cols[2],
@@ -164,7 +166,8 @@ TPLOC_BITTREX_TRADES = {
 
 }
 TPLOC_BITTREX_TRANSFER = {
-    'kind': 1,
+    'kind': lambda cols:
+        'Withdrawal' if cols[1].upper() == 'WITHDRAWAL' else 'Deposit',
     'dtime': 0,
     'buy_currency': lambda cols:
     '' if cols[1].upper() == 'WITHDRAWAL' else cols[2],
@@ -968,6 +971,7 @@ class TradeHistory(object):
         if default_timezone is None:
             default_timezone = tz.tzlocal()
 
+        numtrades = len(self.tlist)
         tlist = []
         for csvline in csv[skiprows:]:
             line = csvline.split(sep=delimiter)[:7]
@@ -976,15 +980,15 @@ class TradeHistory(object):
                 tlist.append(_parse_trade(line, TPLOC_COINBASE_TRADE, default_timezone))
             elif line[1].upper() in ['SEND', 'RECEIVE']:
                 tlist.append(_parse_trade(line, TPLOC_COINBASE_TRANSFER, default_timezone))
-        numtrades = len(tlist)
+
         self.tlist.extend(tlist)
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
         self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
-    def append_bittrex_csv(self, file_name, which_data='trades', skiprows=1, delimiter=',',
-                           default_timezone=None):
+    def append_bittrex_csv(self, file_name, which_data='trades',
+                           skiprows=1, delimiter=',', default_timezone=None):
         if which_data.lower() not in ['trades', 'transfers']:
             raise ValueError(
                 '`which_data` must be one of "trades" or'
@@ -1006,7 +1010,7 @@ class TradeHistory(object):
                 continue
             else:
                 tlist.append(_parse_trade(line, plocs, default_timezone))
-        numtrades = len(tlist)
+        numtrades = len(self.tlist)
         self.tlist.extend(tlist)
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
