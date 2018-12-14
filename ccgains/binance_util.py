@@ -66,3 +66,16 @@ TPLOC_BINANCE_WITHDRAWALS = {
     'mark': -1,
     'comment': 5
 }
+TPLOC_BINANCE_DISTRIBUTIONS = {
+    'kind': 'Distribution',
+    'dtime': 0,
+    'buy_currency': 2,
+    'buy_amount': 3,
+    'sell_currency': '',
+    'sell_amount': '0',
+    'fee_currency': '',
+    'fee_amount': '0',
+    'exchange': 'Binance',
+    'mark': -1,
+    'comment': 4
+}

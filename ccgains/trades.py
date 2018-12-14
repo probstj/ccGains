@@ -49,7 +49,11 @@ log = logging.getLogger(__name__)
 # of them is negative)
 
 # Binance trade csv parameters
-from .binance_util import TPLOC_BINANCE_TRADES, TPLOC_BINANCE_WITHDRAWALS, TPLOC_BINANCE_DEPOSITS
+from .binance_util import (
+    TPLOC_BINANCE_TRADES,
+    TPLOC_BINANCE_WITHDRAWALS,
+    TPLOC_BINANCE_DEPOSITS,
+    TPLOC_BINANCE_DISTRIBUTIONS)
 
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
@@ -263,13 +267,9 @@ class Trade(object):
         if (self.feeval > 0
                 and self.feecur != buy_currency
                 and self.feecur != sell_currency):
-            if self.feecur != 'BNB':
-                print(self.feecur)
-                raise ValueError(
-                        'fee_currency must match either buy_currency or '
-                        'sell_currency')
-            else:
-                log.warning('fee_currency is BNB, not either buy or sell currency')
+            raise ValueError(
+                    'fee_currency must match either buy_currency or '
+                    'sell_currency')
 
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
@@ -560,17 +560,19 @@ class TradeHistory(object):
             self, file_name, which_data='trades', delimiter=',',
             skiprows=1,  default_timezone=tz.tzutc()):
         wdata = which_data[:5].lower()
-        if wdata not in ['trade', 'withd', 'depos']:
+        if wdata not in ['trade', 'withd', 'depos', 'distr']:
             raise ValueError(
                 '`which_data` must be one of "trades", '
-                '"widhtrawals" or "deposits".')
+                '"withdrawals" or "deposits".')
         if wdata == 'withd':
             plocs = TPLOC_BINANCE_WITHDRAWALS
         elif wdata == 'depos':
             plocs = TPLOC_BINANCE_DEPOSITS
+        elif wdata == 'distr':
+            plocs = TPLOC_BINANCE_DISTRIBUTIONS
         else:
             plocs = TPLOC_BINANCE_TRADES
-        return self.append_csv(
+        self.append_csv(
             file_name=file_name,
             param_locs=plocs,
             delimiter=delimiter,
