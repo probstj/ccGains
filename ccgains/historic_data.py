@@ -449,7 +449,7 @@ class HistoricDataAPIBinance(HistoricData):
         self.query_wait_time = 0.06
         # Binance limits number of aggregate trades returned per query:
         self.max_trades_per_query = 1000
-        self.command = 'aggTrades'
+        self.command = '/klines'
         # Binance does not use any separator between base and quote assets
         # Binance pairs are listed as 'from to' (e.g. XRPBTC is price of 1 XRP in BTC)
         self.currency_pair = '{0.cfrom:s}{0.cto:s}'.format(self)
@@ -521,64 +521,80 @@ class HistoricDataAPIBinance(HistoricData):
 
         In case there is a limit on the number of trades returned by
         the API, several queries will be sent to capture the full
-        range of prices. Binance limits aggtrades to 1000 per response
+        range of prices. Binance limit is 1000 per response
 
         """
         if end is None:
-            # Fetch a tme span of one day:
+            # Fetch a time span of one day:
             end = start + 86400
         # Binance uses milliseconds instead of seconds
         start = int(start * 1000)
         end = int(end * 1000)
         self._wait_if_needed()
 
-        # Get all the aggregate trades that happened in this time period for
-        # this symbol
+        # Instead of getting all trades (>20k for a day, in some cases),
+        # just get the minute-ly closing price
 
-        # Make the first request. If we give a start time (we need to), then
-        # we must also give an end time, and the difference must not be more
-        # than one hour; this means we will likely get less than the limit
-        # for the first request. Requests after the initial request can be
-        # queried by id instead, and so we can get the maximum
-        try:
-            req = requests.get(
-                self.url + '/aggTrades',
-                params={'symbol': self.currency_pair,
-                        'startTime': start,
-                        'endTime': start + 3600 * 1000,
-                        'limit': 1000})
-        except requests.ConnectionError:
-            raise self.connection_error
-        if req.status_code in [429, 418]:
-            raise ConnectionError('Binance Rate limits exceeded')
-        df = self._req_to_df(req)
-        last_dt = df.index[-1]
-        last_id = df.iloc[-1].loc['a']
-        while last_dt < pd.Timestamp(end, unit='ms'):
-            self._wait_if_needed()
+        # Set up to pull data from the API
+        kline_interval = '1m'
+        max_msec = int(pd.Timedelta(kline_interval).total_seconds()
+                       * self.max_trades_per_query
+                       * 1000)
+        start_time = start
+        remaining_time = pd.Timedelta((end - start), 'ms')
+        params = {'symbol': self.currency_pair, 'interval': kline_interval}
+        df = pd.DataFrame()
+        while remaining_time > pd.Timedelta(0):
+            end_time = min(end, start_time + max_msec)
+            limit = int(pd.Timedelta(end_time - start_time, 'ms')
+                        / pd.Timedelta(kline_interval))
+            params['startTime'] = start_time
+            params['endTime'] = end_time
+            params['limit'] = limit
             try:
-                req = requests.get(
-                    self.url + '/aggTrades',
-                    params={'symbol': self.currency_pair,
-                            'fromId': last_id + 1,
-                            'limit': 1000})
+                # Make the API call
+                url = self.url + self.command
+                req = requests.get(url, params=params)
             except requests.ConnectionError:
                 raise self.connection_error
+            # Check for valid response:
             if req.status_code in [429, 418]:
                 raise ConnectionError('Binance Rate limits exceeded')
-            df = df.append(self._req_to_df(req))
-            last_dt = df.index[-1]
-            last_id = df.iloc[-1].loc['a']
-        # All trades for the interval are now saved
-        # May be trades past the requested date, so remove those
-        df = df[df.index <= pd.Timestamp(end, unit='ms')]
+            elif req.status_code >= 400:
+                err_code = req.json()['code']
+                err_msg = req.json()['msg']
+                raise ValueError(
+                    'Cannot retrieve trade data from Binance '
+                    'because of error code %s (%s) when querying URL "%s"'
+                    % (err_code, err_msg, req.url))
+            # Data should be OK, make a DataFrame from it
+            klines = pd.DataFrame(
+                req.json(),
+                columns=[
+                    'OpenTime',
+                    'Open', 'High', 'Low', 'Close', 'Volume',
+                    'CloseTime',
+                    'QuoteAssetVolume', 'NumTrades',
+                    'TakerBuyBaseAssetVolume', 'TakerBuyQuoteAssetVolume',
+                    'Ignore'])
+            # Drop the columns we don't need
+            klines = klines.iloc[:, [4, 5, 6]]
+            # Index by interval close time and add to previous results
+            klines.CloseTime = pd.to_datetime(klines.CloseTime, unit='ms')
+            klines = klines.astype({'Close': float, 'Volume': float})
+            klines.set_index('CloseTime', inplace=True)
+            df = df.append(klines)
+            # Set up for next loop (if needed)
+            remaining_time -= limit * pd.Timedelta(kline_interval)
+            start_time = end_time
+
         log.info('Fetched historical price data records with request: %s', req.url)
 
         # Get weighted prices, resampled with interval:
         # (this will only return one column, the weighted prices;
         # the total volume won't be needed anymore)
         data = resample_weighted_average(
-            df, self.interval, 'p', 'q')
+            df, self.interval, 'Close', 'Volume')
 
         # In case the data has been upsampled (some events
         # being more separated than interval), the resulting
@@ -590,45 +606,6 @@ class HistoricDataAPIBinance(HistoricData):
             data.index = data.index.tz_localize('UTC')
 
         return len(df), data
-
-    @staticmethod
-    def _req_to_df(req):
-        # Read data into a pandas DataFrame
-        if str(req.status_code)[0] == '4':
-            err_code = req.json()['code']
-            err_msg = req.json()['msg']
-            raise ValueError(
-                'Cannot retrieve trade data from Binance '
-                'because of error code %s (%s) when querying URL "%s"'
-                % (err_code, err_msg, req.url))
-        try:
-            df = pd.read_json(
-                req.text, orient='records', precise_float=True,
-                convert_axes=False, convert_dates=['T'], date_unit='ms',
-                keep_default_dates=False, dtype={
-                    'a': int,
-                    'p': float,
-                    'q': float,
-                    'f': False,
-                    'l': False,
-                    'T': False,
-                    'm': False,
-                    'M': False
-                     })
-            log.info('Successfully fetched %i trades', len(df))
-        except ValueError:
-            # There might have been an error returned from Binance,
-            # which cannot be parsed the same way as regular data.
-            j = pd.io.json.loads(req.text)
-            if 'error' in j:
-                raise ValueError(
-                    "Binance API returned error: {0:s}\n"
-                    "Requested URL was: {1:s}".format(
-                        j['error'], req.url))
-            else:
-                raise
-        df.set_index('T', inplace=True)
-        return df
 
     def prepare_request(self, dtime):
         """Return a pandas DataFrame which contains the data for the
