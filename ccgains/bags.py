@@ -964,6 +964,17 @@ class BagFIFO(object):
                 elif trade.feecur == trade.buycur:
                     # fee is not included in buyval
                     fee_p = trade.feeval / (trade.buyval + trade.feeval)
+                elif trade.feecur == 'BNB':
+                    # Some exchanges, like Binance, offer to pay the fee in
+                    # a native currency (BNB for Binance). In that case, convert
+                    # the fee amount to the sell currency, calculate the fee
+                    # percentage, and initiate a pay() for the fee
+                    fee_in_sell_cur = Decimal(self.relation.get_rate(
+                        trade.dtime, trade.feecur, trade.sellcur))
+                    fee_p = fee_in_sell_cur / (trade.sellval + fee_in_sell_cur)
+                    self.pay(trade.dtime, trade.feecur, trade.feeval,
+                             trade.exchange, fee_ratio=1, report_info={
+                                'kind': 'exchange fee'})
                 else:
                     self._abort(
                         'Fees with different currency than one of the '
