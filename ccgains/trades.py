@@ -50,7 +50,11 @@ log = logging.getLogger(__name__)
 # of them is negative)
 
 # Binance trade csv parameters
-from .binance_util import TPLOC_BINANCE_TRADES, TPLOC_BINANCE_WITHDRAWALS, TPLOC_BINANCE_DEPOSITS
+from .binance_util import (
+    TPLOC_BINANCE_TRADES,
+    TPLOC_BINANCE_WITHDRAWALS,
+    TPLOC_BINANCE_DEPOSITS,
+    TPLOC_BINANCE_DISTRIBUTIONS)
 
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
@@ -658,7 +662,7 @@ class TradeHistory(object):
             self, file_name, which_data='trades', delimiter=',',
             skiprows=1,  default_timezone=tz.tzutc()):
         wdata = which_data[:5].lower()
-        if wdata not in ['trade', 'withd', 'depos']:
+        if wdata not in ['trade', 'withd', 'depos', 'distr']:
             raise ValueError(
                 '`which_data` must be one of "trades", '
                 '"withdrawals" or "deposits".')
@@ -666,6 +670,8 @@ class TradeHistory(object):
             plocs = TPLOC_BINANCE_WITHDRAWALS
         elif wdata == 'depos':
             plocs = TPLOC_BINANCE_DEPOSITS
+        elif wdata == 'distr':
+            plocs = TPLOC_BINANCE_DISTRIBUTIONS
         else:
             plocs = TPLOC_BINANCE_TRADES
         self.append_csv(
@@ -1011,7 +1017,7 @@ class TradeHistory(object):
                         skiprows=skiprows, default_timezone=default_timezone)
 
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
-                            delimiter=',', default_timezone=tz.tzutc()):
+                            delimiter=',', default_timezone=None):
         with open(file_name) as f:
             csv = f.readlines()
         if currency is None:
@@ -1038,8 +1044,8 @@ class TradeHistory(object):
         # trades must be sorted:
         self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
-    def append_bittrex_csv(self, file_name, which_data='trades', skiprows=1, delimiter=',',
-                           default_timezone=tz.tzutc()):
+    def append_bittrex_csv(self, file_name, which_data='trades',
+                           skiprows=1, delimiter=',', default_timezone=None):
         if which_data.lower() not in ['trades', 'transfers']:
             raise ValueError(
                 '`which_data` must be one of "trades" or'
