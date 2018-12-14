@@ -599,7 +599,8 @@ class HistoricDataAPIBinance(HistoricData):
             err_msg = req.json()['msg']
             raise ValueError(
                 'Cannot retrieve trade data from Binance '
-                'because of error code %s (%s) when querying URL "%s"' % (err_code, err_msg, req.url))
+                'because of error code %s (%s) when querying URL "%s"'
+                % (err_code, err_msg, req.url))
         try:
             df = pd.read_json(
                 req.text, orient='records', precise_float=True,
@@ -642,7 +643,8 @@ class HistoricDataAPIBinance(HistoricData):
                 try:
                     self.data = store.get(key)
                     # Check whether data can be accessed:
-                    self.data.at[pd.Timestamp(dtime).floor(self.data.index.freq)]
+                    self.data.at[
+                        pd.Timestamp(dtime).floor(self.data.index.freq)]
                     return self.data
                 except (KeyError, AttributeError):
                     # In case of the hdf5 file got corrupted somehow,
@@ -656,8 +658,8 @@ class HistoricDataAPIBinance(HistoricData):
             start = dtime.floor('D').value // 10 ** 9
             count, self.data = self._fetch_from_api(start)
 
-            # For Binance, _fetch_from_api() already ensures that all data is collected
-            # (repeating subsequent queries if needed)
+            # For Binance, _fetch_from_api() already ensures that all data
+            # is collected (repeating subsequent queries if needed)
 
             store.put(key, self.data, format="fixed")
             return self.data
