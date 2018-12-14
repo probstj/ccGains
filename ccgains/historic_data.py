@@ -451,7 +451,8 @@ class HistoricDataAPIBinance(HistoricData):
         self.max_trades_per_query = 1000
         self.command = 'aggTrades'
         # Binance does not use any separator between base and quote assets
-        self.currency_pair = '{0.cto:s}{0.cfrom:s}'.format(self)
+        # Binance pairs are listed as 'from to' (e.g. XRPBTC is price of 1 XRP in BTC)
+        self.currency_pair = '{0.cfrom:s}{0.cto:s}'.format(self)
         self.last_query_time = pd.Timestamp.now()
         self.connection_error = requests.ConnectionError(
             'Price data for %s could not be loaded from %s '
@@ -483,7 +484,7 @@ class HistoricDataAPIBinance(HistoricData):
                 self.file_name = file_name
             else:
                 # Try flipped currency pair
-                currency_pair_f = '{0.cfrom:s}{0.cto:s}'.format(self)
+                currency_pair_f = '{0.cto:s}{0.cfrom:s}'.format(self)
                 if currency_pair_f not in known_symbols:
                     raise ValueError(
                         'Neither currency pair "{0:s}" nor pair "{1:s}" is '
@@ -593,6 +594,12 @@ class HistoricDataAPIBinance(HistoricData):
     @staticmethod
     def _req_to_df(req):
         # Read data into a pandas DataFrame
+        if str(req.status_code)[0] == '4':
+            err_code = req.json()['code']
+            err_msg = req.json()['msg']
+            raise ValueError(
+                'Cannot retrieve trade data from Binance '
+                'because of error code %s (%s) when querying URL "%s"' % (err_code, err_msg, req.url))
         try:
             df = pd.read_json(
                 req.text, orient='records', precise_float=True,
