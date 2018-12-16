@@ -279,7 +279,7 @@ def _parse_trade(str_list, param_locs, default_timezone,
 def _get_tx_fees(txid, currency):
     """Get missing transaction fees using blockcypher API.
 
-    :param tx: str:
+    :param txid: str:
         The transaction-ID.
     :param currency: str:
         The currency of the fees.
