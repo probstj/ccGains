@@ -108,6 +108,28 @@ TPLOC_TREZOR_WALLET = {
         Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
     'exchange': 'Trezor', 'mark': 2, 'comment': 3}
 
+# Trade parameters for the Electrum Wallet (both BTC and LTC tested)
+# Withdrawal or deposits are detected based on whether a '-' sign is
+# present in the first char of the 'value' column
+TPLOC_ELECTRUM_WALLET = {
+    'kind': lambda cols:
+        'Withdrawal' if cols[3][0] == '-' else 'Deposit',
+    'dtime': 4,
+    'buy_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'buy_amount': lambda cols:
+        Decimal(cols[3].split(' ')[0]),
+    'sell_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'sell_amount': '',
+    'fee_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'fee_amount': -1,
+    'exchange': 'Electrum Wallet',
+    'mark': 0,
+    'comment': 1
+}
+
 # Coinbase (combined transactions & trades)
 TPLOC_COINBASE_TRADE = {
     'kind': lambda cols:
@@ -957,6 +979,32 @@ class TradeHistory(object):
         TPLOC_TREZOR_WALLET['fee_currency'] = currency
 
         self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
+                        skiprows=skiprows, default_timezone=default_timezone)
+
+    def append_electrum_csv(self, file_name, skiprows=1,
+                            default_timezone=None):
+        """Import trades from a csv file exported from the Electrum Wallet
+        and add them to this TradeHistory.
+
+        It wolrks with exported files from the original Electrum Wallet (BTC)
+        as well as for the Electrum Litecoin Wallet (LTC), as the format is
+        exactly the same.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, i.e. the local timezone,
+            which is what Bitcoin.de exports at time of writing, but
+            it might change in future.
+
+        """
+
+        self.append_csv(file_name, TPLOC_ELECTRUM_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
 
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
