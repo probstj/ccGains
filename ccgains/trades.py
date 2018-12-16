@@ -294,8 +294,6 @@ def _get_tx_fees(txid, currency):
             fee = from_satoshis(tx['fees'], currency.lower())
             feeval = Decimal(fee)
         elif currency == 'LTC':
-            # I am not sure about this factor, but it
-            # seems to work
             fee = tx['fees'] / 10**8  # Smallest unit of measure for LTC
             feeval = Decimal(fee)
     except AssertionError:
