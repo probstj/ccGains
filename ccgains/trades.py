@@ -48,6 +48,13 @@ log = logging.getLogger(__name__)
 # (Note that buy and sell values may be swapped if one
 # of them is negative)
 
+# Binance trade csv parameters
+from .binance_util import (
+    TPLOC_BINANCE_TRADES,
+    TPLOC_BINANCE_WITHDRAWALS,
+    TPLOC_BINANCE_DEPOSITS,
+    TPLOC_BINANCE_DISTRIBUTIONS)
+
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
 TPLOC_POLONIEX_TRADES = {
@@ -570,6 +577,49 @@ class TradeHistory(object):
             delimiter=delimiter,
             skiprows=skiprows,
             default_timezone=default_timezone)
+
+    def append_binance_csv(
+            self, file_name, which_data='trades', delimiter=',',
+            skiprows=1,  default_timezone=tz.tzutc()):
+        """Import trades or transfers from a csv file from Binance and add them
+        to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"`, `"withdrawals"`, `"deposits"`, or
+            `"distributions"`. Binance separates generated CSV histories into
+            these four categories; specify which is being imported here.
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the csv
+            string; by default Binance does not. Otherwise, if None, the time
+            data in the csv will be interpreted as the time in the local timezone
+            according to the locale setting; or it must be a tzinfo subclass
+            (from dateutil.tz or pytz);
+            The default is UTC time, which is what Binance exports at the time
+            of writing, but it may change in the future
+
+        """
+        wdata = which_data[:5].lower()
+        if wdata not in ['trade', 'withd', 'depos', 'distr']:
+            raise ValueError(
+                '`which_data` must be one of "trades", '
+                '"withdrawals" or "deposits".')
+        if wdata == 'withd':
+            plocs = TPLOC_BINANCE_WITHDRAWALS
+        elif wdata == 'depos':
+            plocs = TPLOC_BINANCE_DEPOSITS
+        elif wdata == 'distr':
+            plocs = TPLOC_BINANCE_DISTRIBUTIONS
+        else:
+            plocs = TPLOC_BINANCE_TRADES
+        self.append_csv(
+            file_name=file_name,
+            param_locs=plocs,
+            delimiter=delimiter,
+            skiprows=skiprows,
+            default_timezone=default_timezone
+        )
 
     def append_poloniex_csv(
             self, file_name, which_data='trades', condense_trades=False,
