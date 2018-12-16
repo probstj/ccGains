@@ -559,6 +559,25 @@ class TradeHistory(object):
     def append_binance_csv(
             self, file_name, which_data='trades', delimiter=',',
             skiprows=1,  default_timezone=tz.tzutc()):
+        """Import trades or transfers from a csv file from Binance and add them
+        to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"`, `"withdrawals"`, `"deposits"`, or
+            `"distributions"`. Binance separates generated CSV histories into
+            these four categories; specify which is being imported here.
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the csv
+            string; by default Binance does not. Otherwise, if None, the time
+            data in the csv will be interpreted as the time in the local timezone
+            according to the locale setting; or it must be a tzinfo subclass
+            (from dateutil.tz or pytz);
+            The default is UTC time, which is what Binance exports at the time
+            of writing, but it may change in the future
+
+        """
         wdata = which_data[:5].lower()
         if wdata not in ['trade', 'withd', 'depos', 'distr']:
             raise ValueError(
