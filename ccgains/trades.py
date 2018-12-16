@@ -475,6 +475,43 @@ class TradeHistory(object):
                 '%i have no assigned withdrawal fees.' % (
                         num_unmatched, num_feeless))
 
+    def update_ticker_names(self, changes=None):
+        """Update the names of a ticker previously imported into this
+        TradeHistory.
+
+        Coins occasionally change ticker symbols, but older history files may
+        not include the change, and instead still refer to the coin by its
+        old name, although pricing history has changed all data to the new name.
+        This method allows for in-place swapping to the new name.
+
+        :param changes: (dict{string: string})
+            A dictionary in the form {'old ticker': 'new ticker}. All occurrences
+            of 'old ticker' in this TradeHistory will be updated to 'new ticker'
+            Price, cost, amount data will remain unchanged.
+
+        """
+        if changes is None:
+            log.warning('`update_ticker_names` got no tickers to change')
+            return
+        if not isinstance(changes, dict):
+            log.warning('`update_ticker_names` expected a dict, but got %s' % type(changes))
+            return
+        count = {}
+        for i in range(len(self.tlist)):
+            for old, new in changes.items():
+                if self.tlist[i].buycur == old:
+                    self.tlist[i].buycur = new
+                elif self.tlist[i].sellcur == old:
+                    self.tlist[i].sellcur = new
+                else:
+                    continue
+                if old in count.keys():
+                    count[old] += 1
+                else:
+                    count[old] = 1
+        for symbol, counts in count.items():
+            log.info('Replaced %i occurrences of ticker "%s" with "%s"' % (counts, symbol, changes[symbol]))
+
     def append_csv(
             self, file_name, param_locs=range(11), delimiter=',', skiprows=1,
             default_timezone=None):
