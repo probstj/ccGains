@@ -296,9 +296,11 @@ def _get_tx_fees(txid, currency):
         elif currency == 'LTC':
             # I am not sure about this factor, but it
             # seems to work
-            fee = tx['fees'] * 0.00000001
+            fee = tx['fees'] / 10**8  # Smallest unit of measure for LTC
             feeval = Decimal(fee)
-    except:
+    except AssertionError:
+        print('Transaction id %s not valid' % txid)
+        return None
         print('Wrong Transaction ID.')
 
     return feeval
