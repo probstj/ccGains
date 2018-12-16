@@ -961,6 +961,27 @@ class TradeHistory(object):
 
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
                             delimiter=',', default_timezone=None):
+        """Import trades from a csv file exported from Coinbase.com for all
+        wallets (Tools > History > Download History) and adds them to this
+        TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time
+
+        :param currency: (string)
+            The quote currency used for transactions (e.g. USD/EUR). If not
+            provided, will attempt to determine currency from the csv file,
+            but this may not always be accurate.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, as Coinbase (at the time of writing) outputs
+            local time (at the time of purchase) with transaction history
+
+        """
         with open(file_name) as f:
             csv = f.readlines()
         if currency is None:
@@ -989,6 +1010,27 @@ class TradeHistory(object):
 
     def append_bittrex_csv(self, file_name, which_data='trades',
                            skiprows=1, delimiter=',', default_timezone=None):
+        """Import trades from a csv file exported from Bittrex.com and
+        add them to this TradeHistory.
+
+        Afterward, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"` or `"transfers"`. Bittrex only exports
+            trade history, but displays transfer history in a table that can be
+            pasted into a csv file manually. This parser assumes the same column
+            layout as is shown on the Bittrex transfer history page."
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, as Bittrex (at the time of writing) outputs
+            local time (at the time of purchase) with transaction history
+
+        """
         if which_data.lower() not in ['trades', 'transfers']:
             raise ValueError(
                 '`which_data` must be one of "trades" or'
