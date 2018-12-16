@@ -206,7 +206,6 @@ TPLOC_BITTREX_TRANSFER = {
     'comment': 4
 }
 
-
 def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
     to *param_locs*.
