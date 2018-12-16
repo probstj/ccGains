@@ -48,6 +48,13 @@ log = logging.getLogger(__name__)
 # (Note that buy and sell values may be swapped if one
 # of them is negative)
 
+# Binance trade csv parameters
+from .binance_util import (
+    TPLOC_BINANCE_TRADES,
+    TPLOC_BINANCE_WITHDRAWALS,
+    TPLOC_BINANCE_DEPOSITS,
+    TPLOC_BINANCE_DISTRIBUTIONS)
+
 # Trade parameters in csv from Poloniex.com:
 # ('comment' is the Poloniex order number)
 TPLOC_POLONIEX_TRADES = {
@@ -108,6 +115,103 @@ TPLOC_TREZOR_WALLET = {
         Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
     'exchange': 'Trezor', 'mark': 2, 'comment': 3}
 
+# Trade parameters for the Electrum Wallet (both BTC and LTC tested)
+# Withdrawal or deposits are detected based on whether a '-' sign is
+# present in the first char of the 'value' column
+TPLOC_ELECTRUM_WALLET = {
+    'kind': lambda cols:
+        'Withdrawal' if cols[3][0] == '-' else 'Deposit',
+    'dtime': 4,
+    'buy_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'buy_amount': lambda cols:
+        Decimal(cols[3].split(' ')[0]),
+    'sell_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'sell_amount': '',
+    'fee_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'fee_amount': -1,
+    'exchange': 'Electrum Wallet',
+    'mark': 0,
+    'comment': 1
+}
+
+# Coinbase (combined transactions & trades)
+TPLOC_COINBASE_TRADE = {
+    'kind': lambda cols:
+        'Buy' if cols[1].upper() == 'BUY' else 'Sell',
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    cols[2] if cols[1].upper() == 'BUY' else cols[7],
+    'buy_amount': lambda cols:
+    Decimal(cols[3]) if cols[1].upper() == 'BUY' else Decimal(cols[5]),
+    'sell_currency': lambda cols:
+    cols[2] if cols[1].upper() == 'SELL' else cols[7],
+    'sell_amount': lambda cols:
+    Decimal(cols[3]) if cols[1].upper() == 'SELL' else Decimal(cols[5]),
+    'fee_currency': 7,
+    'fee_amount': lambda cols:
+    Decimal(cols[5]) - Decimal(cols[3]) * Decimal(cols[4]),
+    'exchange': 'Coinbase',
+    'mark': -1,
+    'comment': 6
+}
+TPLOC_COINBASE_TRANSFER = {
+    'kind': lambda cols:
+        'Withdrawal' if cols[1].upper() == 'SEND' else 'Deposit',
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    '' if cols[1].upper() == 'SEND' else cols[2],
+    'buy_amount': lambda cols:
+    '0' if cols[1].upper() == 'SEND' else Decimal(cols[3]),
+    'sell_currency': lambda cols:
+    '' if cols[1].upper() == 'RECEIVE' else cols[2],
+    'sell_amount': lambda cols:
+    '0' if cols[1].upper() == 'RECEIVE' else Decimal(cols[3]),
+    'fee_currency': -1,
+    'fee_amount': -1,
+    'exchange': 'Coinbase',
+    'mark': -1,
+    'comment': 6
+}
+TPLOC_BITTREX_TRADES = {
+    'kind': 2,
+    'dtime': 8,
+    'buy_currency': lambda cols:
+        cols[1].split('-')[cols[2].split('_')[1] == 'BUY'],
+    'buy_amount': lambda cols:
+        Decimal(cols[3]) if cols[2].split('_')[1] == 'BUY' else Decimal(cols[6]) - Decimal(cols[5]),
+    'sell_currency': lambda cols:
+        cols[1].split('-')[cols[2].split('_')[1] == 'SELL'],
+    'sell_amount': lambda cols:
+        Decimal(cols[3]) if cols[2].split('_')[1] == 'SELL' else Decimal(cols[6]) + Decimal(cols[5]),
+    'fee_currency': lambda cols:
+        cols[1].split('-')[0],
+    'fee_amount': 5,
+    'exchange': 'Bittrex',
+    'mark': -1,
+    'comment': 0
+
+}
+TPLOC_BITTREX_TRANSFER = {
+    'kind': lambda cols:
+        'Withdrawal' if cols[1].upper() == 'WITHDRAWAL' else 'Deposit',
+    'dtime': 0,
+    'buy_currency': lambda cols:
+    '' if cols[1].upper() == 'WITHDRAWAL' else cols[2],
+    'buy_amount': lambda cols:
+    '0' if cols[1].upper() == 'WITHDRAWAL' else Decimal(cols[3]),
+    'sell_currency': lambda cols:
+    '' if cols[1].upper() == 'DEPOSIT' else cols[2],
+    'sell_amount': lambda cols:
+    '0' if cols[1].upper() == 'DEPOSIT' else Decimal(cols[3]),
+    'fee_currency': -1,
+    'fee_amount': -1,
+    'exchange': 'Bittrex',
+    'mark': -1,
+    'comment': 4
+}
 
 def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
@@ -549,6 +653,49 @@ class TradeHistory(object):
             skiprows=skiprows,
             default_timezone=default_timezone)
 
+    def append_binance_csv(
+            self, file_name, which_data='trades', delimiter=',',
+            skiprows=1,  default_timezone=tz.tzutc()):
+        """Import trades or transfers from a csv file from Binance and add them
+        to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"`, `"withdrawals"`, `"deposits"`, or
+            `"distributions"`. Binance separates generated CSV histories into
+            these four categories; specify which is being imported here.
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the csv
+            string; by default Binance does not. Otherwise, if None, the time
+            data in the csv will be interpreted as the time in the local timezone
+            according to the locale setting; or it must be a tzinfo subclass
+            (from dateutil.tz or pytz);
+            The default is UTC time, which is what Binance exports at the time
+            of writing, but it may change in the future
+
+        """
+        wdata = which_data[:5].lower()
+        if wdata not in ['trade', 'withd', 'depos', 'distr']:
+            raise ValueError(
+                '`which_data` must be one of "trades", '
+                '"withdrawals" or "deposits".')
+        if wdata == 'withd':
+            plocs = TPLOC_BINANCE_WITHDRAWALS
+        elif wdata == 'depos':
+            plocs = TPLOC_BINANCE_DEPOSITS
+        elif wdata == 'distr':
+            plocs = TPLOC_BINANCE_DISTRIBUTIONS
+        else:
+            plocs = TPLOC_BINANCE_TRADES
+        self.append_csv(
+            file_name=file_name,
+            param_locs=plocs,
+            delimiter=delimiter,
+            skiprows=skiprows,
+            default_timezone=default_timezone
+        )
+
     def append_poloniex_csv(
             self, file_name, which_data='trades', condense_trades=False,
             delimiter=',', skiprows=1, default_timezone=tz.tzutc()):
@@ -882,6 +1029,132 @@ class TradeHistory(object):
 
         self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
+
+    def append_electrum_csv(self, file_name, skiprows=1,
+                            default_timezone=None):
+        """Import trades from a csv file exported from the Electrum Wallet
+        and add them to this TradeHistory.
+
+        It wolrks with exported files from the original Electrum Wallet (BTC)
+        as well as for the Electrum Litecoin Wallet (LTC), as the format is
+        exactly the same.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, i.e. the local timezone,
+            which is what Bitcoin.de exports at time of writing, but
+            it might change in future.
+
+        """
+
+        self.append_csv(file_name, TPLOC_ELECTRUM_WALLET, delimiter=',',
+                        skiprows=skiprows, default_timezone=default_timezone)
+
+    def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
+                            delimiter=',', default_timezone=None):
+        """Import trades from a csv file exported from Coinbase.com for all
+        wallets (Tools > History > Download History) and adds them to this
+        TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time
+
+        :param currency: (string)
+            The quote currency used for transactions (e.g. USD/EUR). If not
+            provided, will attempt to determine currency from the csv file,
+            but this may not always be accurate.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, as Coinbase (at the time of writing) outputs
+            local time (at the time of purchase) with transaction history
+
+        """
+        with open(file_name) as f:
+            csv = f.readlines()
+        if currency is None:
+            quote_currency = csv[3].split(sep=delimiter)[4].split(' ')[0]
+        else:
+            quote_currency = currency
+
+        if default_timezone is None:
+            default_timezone = tz.tzlocal()
+
+        numtrades = len(self.tlist)
+        tlist = []
+        for csvline in csv[skiprows:]:
+            line = csvline.split(sep=delimiter)[:7]
+            line.append(quote_currency)
+            if line[1].upper() in ['BUY', 'SELL']:
+                tlist.append(_parse_trade(line, TPLOC_COINBASE_TRADE, default_timezone))
+            elif line[1].upper() in ['SEND', 'RECEIVE']:
+                tlist.append(_parse_trade(line, TPLOC_COINBASE_TRANSFER, default_timezone))
+
+        self.tlist.extend(tlist)
+        log.info("Loaded %i transactions from %s",
+                 len(self.tlist) - numtrades, file_name)
+        # trades must be sorted:
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
+
+    def append_bittrex_csv(self, file_name, which_data='trades',
+                           skiprows=1, delimiter=',', default_timezone=None):
+        """Import trades from a csv file exported from Bittrex.com and
+        add them to this TradeHistory.
+
+        Afterward, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"` or `"transfers"`. Bittrex only exports
+            trade history, but displays transfer history in a table that can be
+            pasted into a csv file manually. This parser assumes the same column
+            layout as is shown on the Bittrex transfer history page."
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, as Bittrex (at the time of writing) outputs
+            local time (at the time of purchase) with transaction history
+
+        """
+        if which_data.lower() not in ['trades', 'transfers']:
+            raise ValueError(
+                '`which_data` must be one of "trades" or'
+                '"transfers"')
+        if which_data.lower() == 'trades':
+            plocs = TPLOC_BITTREX_TRADES
+        else:
+            plocs = TPLOC_BITTREX_TRANSFER
+
+        if default_timezone is None:
+            default_timezone = tz.tzlocal()
+
+        tlist = []
+        with open(file_name, encoding='ascii') as f:
+            csv = f.readlines()
+        for csvline in csv[skiprows:]:
+            line = csvline.split(sep=delimiter)
+            if len(line[1]) < 4:
+                continue
+            else:
+                tlist.append(_parse_trade(line, plocs, default_timezone))
+        numtrades = len(self.tlist)
+        self.tlist.extend(tlist)
+        log.info("Loaded %i transactions from %s",
+                 len(self.tlist) - numtrades, file_name)
+        # Trades must be sorted
+        self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def export_to_csv(
             self, path_or_buf=None, year=None,
