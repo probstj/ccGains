@@ -516,6 +516,8 @@ class TradeHistory(object):
                 # when importing from csv in self.append_bisq_csv, so
                 # skip them here:
                 continue
+            elif t.kind.upper() == 'PAYMENT':
+                continue
             elif t.sellval > 0 and (not t.buycur or (not t.buyval
                 # In Poloniex' csv data, there is sometimes a trade listed
                 # with a non-zero sellval but with 0 buyval, because the

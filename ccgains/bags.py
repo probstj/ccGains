@@ -911,13 +911,14 @@ class BagFIFO(object):
                 log.info("Taxable loss due to fees: %.3f %s",
                          prof, self.currency)
 
-        elif not trade.buycur or (trade.buyval == 0
+        elif (trade.kind.upper() != 'PAYMENT' and
+             (not trade.buycur or (trade.buyval == 0
             # In Poloniex' csv data, there is sometimes a trade listed
             # with a non-zero sellval but with 0 buyval, because the
             # latter amounts to less than 5e-9, which is rounded down.
             # But it is not a withdrawal, so exclude it here:
                 and (trade.exchange != 'Poloniex'
-                     or trade.kind == 'Withdrawal')):
+                     or trade.kind == 'Withdrawal')))):
             # Got nothing, so it must be a withdrawal:
             log.info("Withdrawing %.8f %s from %s (%s, fee: %.8f %s)",
                 trade.sellval, trade.sellcur,
