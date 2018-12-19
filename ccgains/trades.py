@@ -671,7 +671,8 @@ class TradeHistory(object):
                 # ignore empty lines
                 continue
             self.tlist.append(
-                _parse_trade(line, param_locs, default_timezone))
+                _parse_trade(line, param_locs, default_timezone,
+                             fill_missing_fees))
 
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
