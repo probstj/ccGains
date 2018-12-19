@@ -516,7 +516,9 @@ class TradeHistory(object):
                 # when importing from csv in self.append_bisq_csv, so
                 # skip them here:
                 continue
-            elif t.kind.upper() == 'PAYMENT':
+            elif t.kind.upper() in ['PAYMENT', 'DISTRIBUTION']:
+                # These look like withdrawals/deposits, because they lack
+                # either sell or buy amount, but are not. Ignore them:
                 continue
             elif t.sellval > 0 and (not t.buycur or (not t.buyval
                 # In Poloniex' csv data, there is sometimes a trade listed

@@ -885,7 +885,8 @@ class BagFIFO(object):
             # initialize profit for this year:
             self.profit[str(trade.dtime.year)] = Decimal(0)
 
-        if trade.sellcur == self.currency and trade.sellval != 0:
+        if ((trade.sellcur == self.currency and trade.sellval != 0) or
+            (trade.kind.upper() == 'DISTRIBUTION' and trade.sellval == 0)):
             # Paid for with our base currency, simply add new bag:
             # (The cost is directly translated to the base value
             # of the bags)
