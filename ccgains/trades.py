@@ -23,7 +23,6 @@
 #
 # Get the latest version at: https://github.com/probstj/ccGains
 #
-from typing import List
 
 import pandas as pd
 from decimal import Decimal
@@ -365,11 +364,9 @@ class Trade(object):
         if (self.feeval > 0
                 and self.feecur != buy_currency
                 and self.feecur != sell_currency):
-            if self.feecur != 'BNB':
-                print(self.feecur)
-                raise ValueError(
-                        'fee_currency must match either buy_currency or '
-                        'sell_currency')
+            raise ValueError(
+                    'fee_currency must match either buy_currency or '
+                    'sell_currency')
 
     def to_csv_line(self, delimiter=', ', endl='\n'):
         strings = []
@@ -414,7 +411,7 @@ class TradeHistory(object):
 
             self.tlist is a sorted list of trades available after
             some trades have been imported."""
-        self.tlist: List[Trade] = []
+        self.tlist = []
 
     def __getitem__(self, item):
         return self.tlist[item]
@@ -681,29 +678,6 @@ class TradeHistory(object):
                  len(self.tlist) - numtrades, file_name)
         # trades must be sorted:
         self.tlist.sort(key=self._trade_sort_key, reverse=False)
-
-    def update_ticker_names(self, changes=None):
-        if changes is None:
-            log.warning('`update_ticker_names` got no tickers to change')
-            return
-        if not isinstance(changes, dict):
-            log.warning('`update_ticker_names` expected a dict, but got %s' % type(changes))
-            return
-        count = {}
-        for i in range(len(self.tlist)):
-            for old, new in changes.items():
-                if self.tlist[i].buycur == old:
-                    self.tlist[i].buycur = new
-                elif self.tlist[i].sellcur == old:
-                    self.tlist[i].sellcur = new
-                else:
-                    continue
-                if old in count.keys():
-                    count[old] += 1
-                else:
-                    count[old] = 1
-        for symbol, counts in count.items():
-            log.info('Replaced %i occurrences of ticker "%s" with "%s"' % (counts, symbol, changes[symbol]))
 
     def append_ccgains_csv(
             self, file_name, delimiter=',', skiprows=1,
