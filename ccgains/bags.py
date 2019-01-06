@@ -637,7 +637,7 @@ class BagFIFO(object):
                      prof, self.currency)
 
     def pay(self, dtime, currency, amount, exchange, fee_ratio=0,
-            report_info=None):
+            custom_rate=None, report_info=None):
         """Spend an amount of funds.
 
         The money is taken out of the oldest bag on the exchange with
@@ -663,6 +663,16 @@ class BagFIFO(object):
         :param fee_ratio: (number, decimal or parsable string),
             0 <= fee_ratio <= 1; The ratio of *amount* that are fees.
             Default: 0.
+        :param custom_rate: (number, decimal or parsable string),
+            Default: None;
+            Provide a custom rate for conversion of *currency* to the
+            base currency. Usually (i.e. if this is None), the rate is
+            fetched from the CurrencyRelation object provided when this
+            BagFIFO object was created. In some cases, one should rather
+            provide a rate, for example when base currency was bought
+            with this payment, meaning a more specific rate for this
+            trade can be provided than relying on the averaged historic
+            data used otherwise.
         :param report_info: dict, default None;
             Additional information that will be added to the capital
             gains report data. Currently, the only keys looked for are:
@@ -735,14 +745,17 @@ class BagFIFO(object):
         # proceeds only of short term trades:
         st_proc = Decimal()
         # exchange rate at time of payment:
-        try:
-            rate = Decimal(
-                self.relation.get_rate(dtime, currency, self.currency))
-        except KeyError:
-            self._abort(
-                'Could not fetch the price for currency_pair %s_%s on '
-                '%s from provided CurrencyRelation object.' % (
-                        currency, self.currency, dtime))
+        if custom_rate is not None:
+            rate = Decimal(custom_rate)
+        else:
+            try:
+                rate = Decimal(
+                    self.relation.get_rate(dtime, currency, self.currency))
+            except KeyError:
+                self._abort(
+                    'Could not fetch the price for currency_pair %s_%s on '
+                    '%s from provided CurrencyRelation object.' % (
+                            currency, self.currency, dtime))
         # due payment:
         to_pay = amount
         log.info(
@@ -885,7 +898,8 @@ class BagFIFO(object):
             # initialize profit for this year:
             self.profit[str(trade.dtime.year)] = Decimal(0)
 
-        if trade.sellcur == self.currency and trade.sellval != 0:
+        if ((trade.sellcur == self.currency and trade.sellval != 0) or
+            (trade.kind.upper() == 'DISTRIBUTION' and trade.sellval == 0)):
             # Paid for with our base currency, simply add new bag:
             # (The cost is directly translated to the base value
             # of the bags)
@@ -911,13 +925,14 @@ class BagFIFO(object):
                 log.info("Taxable loss due to fees: %.3f %s",
                          prof, self.currency)
 
-        elif not trade.buycur or (trade.buyval == 0
+        elif (trade.kind.upper() != 'PAYMENT' and
+             (not trade.buycur or (trade.buyval == 0
             # In Poloniex' csv data, there is sometimes a trade listed
             # with a non-zero sellval but with 0 buyval, because the
             # latter amounts to less than 5e-9, which is rounded down.
             # But it is not a withdrawal, so exclude it here:
                 and (trade.exchange != 'Poloniex'
-                     or trade.kind == 'Withdrawal')):
+                     or trade.kind == 'Withdrawal')))):
             # Got nothing, so it must be a withdrawal:
             log.info("Withdrawing %.8f %s from %s (%s, fee: %.8f %s)",
                 trade.sellval, trade.sellcur,
@@ -982,10 +997,19 @@ class BagFIFO(object):
             else:
                 fee_p = Decimal()
 
+            # If we bought base currency with this trade, use the trade's
+            # exchange rate rather than the historic data used by default
+            # in self.pay:
+            if trade.buycur == self.currency:
+                rate = trade.buyval / trade.sellval / (1 - fee_p)
+            else:
+                rate = None
+
             # Pay the sold money (including fees):
             prof, proc = self.pay(
                 trade.dtime, trade.sellcur, trade.sellval,
                 trade.exchange, fee_ratio=fee_p,
+                custom_rate=rate,
                 report_info={
                     'kind': 'sale',
                     'buy_currency': trade.buycur,

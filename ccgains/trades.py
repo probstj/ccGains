@@ -116,6 +116,28 @@ TPLOC_TREZOR_WALLET = {
         Decimal(cols[5]) + Decimal(cols[6]) if cols[4] == 'OUT' else '0',
     'exchange': 'Trezor', 'mark': 2, 'comment': 3}
 
+# Trade parameters for the Electrum Wallet (both BTC and LTC tested)
+# Withdrawal or deposits are detected based on whether a '-' sign is
+# present in the first char of the 'value' column
+TPLOC_ELECTRUM_WALLET = {
+    'kind': lambda cols:
+        'Withdrawal' if cols[3][0] == '-' else 'Deposit',
+    'dtime': 4,
+    'buy_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'buy_amount': lambda cols:
+        Decimal(cols[3].split(' ')[0]),
+    'sell_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'sell_amount': '',
+    'fee_currency': lambda cols:
+        cols[3].split(' ')[1],
+    'fee_amount': -1,
+    'exchange': 'Electrum Wallet',
+    'mark': 0,
+    'comment': 1
+}
+
 # Coinbase (combined transactions & trades)
 TPLOC_COINBASE_TRADE = {
     'kind': lambda cols:
@@ -191,7 +213,6 @@ TPLOC_BITTREX_TRANSFER = {
     'mark': -1,
     'comment': 4
 }
-
 
 def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
@@ -498,6 +519,10 @@ class TradeHistory(object):
                 # when importing from csv in self.append_bisq_csv, so
                 # skip them here:
                 continue
+            elif t.kind.upper() in ['PAYMENT', 'DISTRIBUTION']:
+                # These look like withdrawals/deposits, because they lack
+                # either sell or buy amount, but are not. Ignore them:
+                continue
             elif t.sellval > 0 and (not t.buycur or (not t.buyval
                 # In Poloniex' csv data, there is sometimes a trade listed
                 # with a non-zero sellval but with 0 buyval, because the
@@ -560,6 +585,52 @@ class TradeHistory(object):
                 '%i withdrawals could not be matched with deposits, of which '
                 '%i have no assigned withdrawal fees.' % (
                         num_unmatched, num_feeless))
+
+    def update_ticker_names(self, changes=None):
+        """Update the names of a ticker previously imported into this
+        TradeHistory.
+
+        Coins occasionally change ticker symbols, but older history files may
+        not include the change, and instead still refer to the coin by its
+        old name, although pricing history has changed all data to the new name.
+        This method allows for in-place swapping to the new name.
+
+        :param changes: (dict{string: string})
+            A dictionary in the form {'old ticker': 'new ticker}. All occurrences
+            of 'old ticker' in this TradeHistory will be updated to 'new ticker'
+            Price, cost, amount data will remain unchanged.
+
+        """
+        if changes is None:
+            log.warning('`update_ticker_names` got no tickers to change')
+            return
+        if not isinstance(changes, dict):
+            log.warning('`update_ticker_names` expected a dict, but got %s'
+                        % type(changes))
+            return
+        count = {}
+        for i in range(len(self.tlist)):
+            for old, new in changes.items():
+                num_replaced = 0
+                # Possibly replace either buy or sell currency, but not both
+                if self.tlist[i].buycur == old:
+                    self.tlist[i].buycur = new
+                    num_replaced += 1
+                elif self.tlist[i].sellcur == old:
+                    self.tlist[i].sellcur = new
+                    num_replaced += 1
+                # Possibly replace the fee currency as well
+                if self.tlist[i].feecur == old:
+                    self.tlist[i].feecur = new
+                    num_replaced += 1
+                # Track replacements to report out at the end
+                if old in count.keys():
+                    count[old] += num_replaced
+                else:
+                    count[old] = num_replaced
+        for symbol, counts in count.items():
+            log.info('Replaced %i occurrences of ticker "%s" with "%s"'
+                     % (counts, symbol, changes[symbol]))
 
     def append_csv(
             self, file_name, param_locs=range(11), delimiter=',', skiprows=1,
@@ -661,6 +732,25 @@ class TradeHistory(object):
     def append_binance_csv(
             self, file_name, which_data='trades', delimiter=',',
             skiprows=1,  default_timezone=tz.tzutc()):
+        """Import trades or transfers from a csv file from Binance and add them
+        to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"`, `"withdrawals"`, `"deposits"`, or
+            `"distributions"`. Binance separates generated CSV histories into
+            these four categories; specify which is being imported here.
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the csv
+            string; by default Binance does not. Otherwise, if None, the time
+            data in the csv will be interpreted as the time in the local timezone
+            according to the locale setting; or it must be a tzinfo subclass
+            (from dateutil.tz or pytz);
+            The default is UTC time, which is what Binance exports at the time
+            of writing, but it may change in the future
+
+        """
         wdata = which_data[:5].lower()
         if wdata not in ['trade', 'withd', 'depos', 'distr']:
             raise ValueError(
@@ -1016,8 +1106,55 @@ class TradeHistory(object):
         self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
 
+    def append_electrum_csv(self, file_name, skiprows=1,
+                            default_timezone=None):
+        """Import trades from a csv file exported from the Electrum Wallet
+        and add them to this TradeHistory.
+
+        It wolrks with exported files from the original Electrum Wallet (BTC)
+        as well as for the Electrum Litecoin Wallet (LTC), as the format is
+        exactly the same.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, i.e. the local timezone,
+            which is what Bitcoin.de exports at time of writing, but
+            it might change in future.
+
+        """
+
+        self.append_csv(file_name, TPLOC_ELECTRUM_WALLET, delimiter=',',
+                        skiprows=skiprows, default_timezone=default_timezone)
+
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
                             delimiter=',', default_timezone=None):
+        """Import trades from a csv file exported from Coinbase.com for all
+        wallets (Tools > History > Download History) and adds them to this
+        TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time
+
+        :param currency: (string)
+            The quote currency used for transactions (e.g. USD/EUR). If not
+            provided, will attempt to determine currency from the csv file,
+            but this may not always be accurate.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, as Coinbase (at the time of writing) outputs
+            local time (at the time of purchase) with transaction history
+
+        """
         with open(file_name) as f:
             csv = f.readlines()
         if currency is None:
@@ -1046,6 +1183,27 @@ class TradeHistory(object):
 
     def append_bittrex_csv(self, file_name, which_data='trades',
                            skiprows=1, delimiter=',', default_timezone=None):
+        """Import trades from a csv file exported from Bittrex.com and
+        add them to this TradeHistory.
+
+        Afterward, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"` or `"transfers"`. Bittrex only exports
+            trade history, but displays transfer history in a table that can be
+            pasted into a csv file manually. This parser assumes the same column
+            layout as is shown on the Bittrex transfer history page."
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+            The default is None, as Bittrex (at the time of writing) outputs
+            local time (at the time of purchase) with transaction history
+
+        """
         if which_data.lower() not in ['trades', 'transfers']:
             raise ValueError(
                 '`which_data` must be one of "trades" or'

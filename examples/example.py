@@ -168,7 +168,21 @@ def main():
 
 
     #########################################################################
-    # 8. Optionally, export all trades for future reference                 #
+    # 8. Optionally, rename currencies                                      #
+    #########################################################################
+
+    # Some currencies have changed ticker symbols since their first listing
+    # date (e.g., AntShares (ANS) -> Neo (NEO)). This can lead to situations
+    # where all historical pricing data lists the new ticker symbol, but
+    # transaction history still lists the old ticker.
+
+    # This method allows for renaming symbols in the TradeHistory, if any
+    # occurrences of the old name/ticker are found.
+
+    th.update_ticker_names({'ANS': 'NEO'})
+
+    #########################################################################
+    # 9. Optionally, export all trades for future reference                 #
     #########################################################################
 
     # You can export all imported trades for future reference into a single
@@ -204,7 +218,7 @@ def main():
 
 
     #########################################################################
-    # 9. Now, finally, the calculation is ready to start                    #
+    # 10. Now, finally, the calculation is ready to start                    #
     #########################################################################
 
     # If the calculation run for previous years already, we can load the state
@@ -241,14 +255,14 @@ def main():
 
 
     #########################################################################
-    # 10. Save the state of your holdings for the calculation due next year #
+    # 11. Save the state of your holdings for the calculation due next year #
     #########################################################################
 
     bf.save('status2017.json')
 
 
     #########################################################################
-    # 11. Create your capital gains report for cryptocurrency trades        #
+    # 12. Create your capital gains report for cryptocurrency trades        #
     #########################################################################
 
     # The default column names used in the report don't look very nice:
@@ -304,7 +318,7 @@ def main():
 
 
     #########################################################################
-    # 12. Optional: Create a detailed report outlining the calculation      #
+    # 13. Optional: Create a detailed report outlining the calculation      #
     #########################################################################
 
     # The simple capital gains report created above is just a plain listing
