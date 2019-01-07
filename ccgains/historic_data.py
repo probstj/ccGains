@@ -415,3 +415,232 @@ class HistoricDataAPI(HistoricData):
 
             store.put(key, self.data, format="fixed")
             return self.data
+
+
+class HistoricDataAPICoinbase(HistoricData):
+    last_query_time = pd.Timestamp.now()
+
+    def __init__(self, cache_folder, unit, interval='H'):
+        """Initialize a HistoricData object which tranparently fetches data
+        on request (`get_price`) from the public Coinbase API:
+        'https://api.pro.coinbase.com/products/:SYMBOL:/candles'
+
+        For faster loading times on future calls, a HDF5 file is created
+        from the requested data and used transparently the next time a
+        request for the same day and pair is made. These HDF5 files are
+        saved in *cache_folder*.
+
+        The *unit* must be a string given in the form
+        'currency_one/currency_two', e.g. 'BTC/USD'.
+
+        The data will be resampled by calculating the weighted price
+        for interval steps specified by *interval*. See:
+        http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+        for possible values.
+        """
+
+        super(HistoricDataAPICoinbase, self).__init__(unit)
+        self.interval = interval
+        self.url = 'https://api.pro.coinbase.com/products'
+        self.command = "/candles"
+
+        # Coinbase Pro rate limit is 3 per second
+        self.query_wait_time = 0.334
+
+        self.currency_pair = '{0.cfrom:s}-{0.cto:s}'.format(self)
+
+        self.connection_error = requests.ConnectionError(
+            'Price data for %s could not be loaded from %s '
+            '- are you online?' % (self.currency_pair, self.url))
+
+        file_name = path.join(
+            cache_folder,
+            'Coinbase_{0.cfrom:s}-{0.cto:s}_{0.interval:s}.h5'.format(self))
+        flipped_file_name = path.join(
+            cache_folder,
+            'Coinbase_{0.cto:s}-{0.cfrom:s}_{0.interval:s}.h5'.format(self))
+
+        if path.exists(file_name):
+            self.file_name = file_name
+        elif path.exists(flipped_file_name):
+            # Flip currency pair
+            self.cfrom, self.cto = self.cto, self.cfrom
+            self.unit = self.cto + '/' + self.cfrom
+            self.file_name = flipped_file_name
+            self.currency_pair = '{0.cfrom:s}-{0.cto:s}'.format(self)
+        else:
+            try:
+                req = requests.get(self.url)
+            except requests.ConnectionError:
+                raise self.connection_error
+
+            known_symbols = [symbol['id'] for symbol in req.json()]
+
+            if self.currency_pair in known_symbols:
+                self.file_name = file_name
+            else:
+                # Try flipped currency pair
+                flipped_currency_pair = '{0.cto:s}-{0.cfrom:s}'.format(self)
+                if flipped_currency_pair not in known_symbols:
+                    raise ValueError(
+                        'Neither currency pair"{0:s}" nor pair "{1:s}" is '
+                        'available on "{2:s}".'.format(
+                            self.currency_pair, flipped_currency_pair, self.url))
+
+                # Flip currency pair
+                self.cfrom, self.cto = self.cto, self.cfrom
+                self.unit = self.cto + '/' + self.cfrom
+                self.currency_pair = flipped_currency_pair
+                self.file_name = flipped_file_name
+
+    def _wait_if_needed(self):
+        # Wait for minimum call time to pass:
+        now = pd.Timestamp.now()
+        delta = (now - self.last_query_time).total_seconds()
+
+        log.info(f'Coinbase last_query_time: {self.last_query_time}')
+        if delta < self.query_wait_time:
+            log.info('Waiting %f s...', self.query_wait_time - delta)
+            sleep(self.query_wait_time - delta)
+            log.info('...Continuing')
+
+    def _fetch_from_api(self, start, end=None):
+        """Fetch historical candlesticks (OHLC) from Coinbase API.
+
+        :param start: UNIX timestamp(seconds); Start of range to fetch.
+        :param end: UNIX timestamp (seconds); End of range to fetch.
+            If None (default), will fetch a range of one day, i.e.
+            end will be `start + 86400`.
+        :returns: tuple (number of fetched trades, resampled data)
+
+        The returned data will be resampled to `self.interval`. The
+        data will consist of weighted historical prices, averaged over
+        each interval using the traded volume as weights.
+
+        In the case there is a limit on the number of candlesticks
+        returned by the API, several queries will be sent to capture the
+        full range of prices. Coinbase limit is 300 per response
+        """
+
+        end = end or start + 86400
+
+        # Set up parameters
+        granularity = 300  # Get 5-minute candlesticks (300 sec)
+        max_per_query = 300
+        query_delta = granularity * max_per_query  # # of seconds one query can span
+
+        candles_needed = int((end - start) / 300)  # 288 for one full day
+
+        query_url = "{0:s}/{1:s}{2:s}".format(
+            self.url, self.currency_pair, self.command)
+
+        df = None
+
+        def to_iso(timestamp):
+            return pd.Timestamp(timestamp, unit='s').isoformat()
+
+        query_start = start
+        while candles_needed > 0:
+            query_end = min(end, query_start + query_delta)
+            params = {
+                'start': to_iso(query_start),
+                'end': to_iso(query_end),
+                'granularity': granularity
+            }
+            response = self._call_api(query_url, params)
+
+            candles = pd.DataFrame(
+                response.json(),
+                columns=['time', 'low', 'high', 'open', 'close', 'volume']
+            )
+            # Drop columns we don't need
+            candles = candles.iloc[:, [0, 4, 5]]
+            # Index by interval open time and add to previous results
+            candles.time = pd.to_datetime(candles.time, unit='s')
+            candles.set_index('time', inplace=True)
+            if df is None:
+                df = candles
+            else:
+                df.append(candles)
+
+            # Set up for the next loop (if needed)
+            candles_needed -= max_per_query
+            query_start = query_end
+
+            log.info('Fetched historical price data with request: %s', response.url)
+
+        # Get weighted prices, resampled with interval
+        # (this will only return one column, the weighted prices;
+        # tht total volume won't be needed anymore)
+        data = resample_weighted_average(df, self.interval, 'close', 'volume')
+
+        # In case the data has been upsampled (some events
+        # being more separated than interval), the resulting
+        # Series will have some NaNs. Forward-fill them
+        # with the last prices before:
+        data.ffill(inplace=True)
+
+        if data.index.tzinfo is None:
+            data.index = data.index.tz_localize('UTC')
+
+        return len(df), data
+
+    def _call_api(self, url, params):
+        """Call Coinbase API with *params*, validate the response,
+        and return the results
+        """
+
+        # Be nice to the API
+        self._wait_if_needed()
+
+        try:
+            response = requests.get(url, params=params)
+            self.last_query_time = pd.Timestamp.now()
+        except requests.ConnectionError:
+            raise self.connection_error
+
+        # Check for valid response:
+        if response.status_code in [429, 418]:
+            raise ConnectionError('Coinbase Rate limits exceeded')
+        elif response.status_code >= 400:
+            err_msg = response.json()['message']
+            raise ValueError(
+                'Cannot retrieve trade data from Binance '
+                'because of error message %s when querying URL "%s"'
+                % (err_msg, response.url))
+
+        return response
+
+    def prepare_request(self, dtime):
+        """Return a pandas DataFrame which contains the data for the
+        requested datetime *dtime*.
+        """
+
+        dtime = pd.Timestamp(dtime).tz_convert(tz.tzutc())
+        key = "d{a:04d}{m:02d}{d:02d}".format(
+            a=dtime.year, m=dtime.month, d=dtime.day)
+        with pd.HDFStore(self.file_name, mode='a') as store:
+            if key in store:
+                try:
+                    self.data = store.get(key)
+                    # Check whether data can be accessed:
+                    self.data.at[pd.Timestamp(dtime).floor(self.data.index.freq)]
+                    return self.data
+                except (KeyError, AttributeError):
+                    # In case of the hdf5 file got corrupted somehow,
+                    # with the requested date missing from the data,
+                    # reload the data from the API:
+                    log.warning(
+                        'Date %s missing in cached data. '
+                        'Repeating request to API', dtime)
+
+            # We need to fetch the data from the Coinbase API
+            start = dtime.floor('D').value // 10 ** 9
+            count, self.data = self._fetch_from_api(start)
+
+            # For Coinbase, _fetch_from_api() already ensures that all data
+            # is collected (repeating subsequent queries if needed)
+
+            store.put(key, self.data, format="fixed")
+            return self.data
+

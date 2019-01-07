@@ -43,6 +43,7 @@ setup(name='ccGains',
           'jinja2', # I should make this and the next optional some day.
           'babel',
           'weasyprint',
+          'python-dateutil',
       ],
       include_package_data=True,
       zip_safe=False)
