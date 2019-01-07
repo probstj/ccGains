@@ -418,6 +418,8 @@ class HistoricDataAPI(HistoricData):
 
 
 class HistoricDataAPIBinance(HistoricData):
+    last_query_time = pd.Timestamp.now()
+
     def __init__(self, cache_folder, unit, interval='H'):
         """Initialize a HistoricData object which will transparently fetch
         data on request (`get_price`) from the public Binance API:
@@ -442,9 +444,8 @@ class HistoricDataAPIBinance(HistoricData):
         self.url = 'https://api.binance.com/api/v1'
         self.command = '/klines'
 
-        # Applicable Binance rate limit is 1200 / min (for aggTrade requests)
-        self.query_wait_time = 0.05
-        self.last_query_time = pd.Timestamp.now()
+        # Applicable Binance rate limit is 1000 / min (for aggTrade requests)
+        self.query_wait_time = 0.06
         self.max_trades_per_query = 1000
 
         # Binance does not use any separator between base and quote assets
@@ -457,11 +458,11 @@ class HistoricDataAPIBinance(HistoricData):
 
         file_name = path.join(
             cache_folder,
-            'Binance_{0.cto:s}{0.cfrom:s}_{0.interval:s}.h5'.format(self))
+            'Binance_{0.cfrom:s}{0.cto:s}_{0.interval:s}.h5'.format(self))
         # Flipped currency pair:
         flipped_file_name = path.join(
             cache_folder,
-            'Binance_{0.cfrom:s}{0.cto:s}_{0.interval:s}.h5'.format(self))
+            'Binance_{0.cto:s}{0.cfrom:s}_{0.interval:s}.h5'.format(self))
 
         # See if the currency pair is already cached:
         if path.exists(file_name):
@@ -471,7 +472,7 @@ class HistoricDataAPIBinance(HistoricData):
             self.cfrom, self.cto = self.cto, self.cfrom
             self.unit = self.cto + '/' + self.cfrom
             self.file_name = flipped_file_name
-            self.currency_pair = '{0.cto:s}{0.cfrom:s}'.format(self)
+            self.currency_pair = '{0.cfrom:s}{0.cto:s}'.format(self)
         else:
             # Query the API to see if the pair is available:
             try:
@@ -501,7 +502,7 @@ class HistoricDataAPIBinance(HistoricData):
         # Wait for the minimum call time to pass:
         now = pd.Timestamp.now()
         delta = (now - self.last_query_time).total_seconds()
-        self.last_query_time = now
+
         if delta < self.query_wait_time:
             log.info('waiting %f s', self.query_wait_time - delta)
             sleep(self.query_wait_time - delta)
@@ -606,6 +607,7 @@ class HistoricDataAPIBinance(HistoricData):
         try:
             url = self.url + self.command
             req = requests.get(url, params=params)
+            self.last_query_time = now
         except requests.ConnectionError:
             raise self.connection_error
 
