@@ -457,11 +457,11 @@ class HistoricDataAPIBinance(HistoricData):
 
         file_name = path.join(
             cache_folder,
-            'Binance_{0.cto:s}{0.cfrom:s}_{0.interval:s}.h5'.format(self))
+            'Binance_{0.cfrom:s}{0.cto:s}_{0.interval:s}.h5'.format(self))
         # Flipped currency pair:
         flipped_file_name = path.join(
             cache_folder,
-            'Binance_{0.cfrom:s}{0.cto:s}_{0.interval:s}.h5'.format(self))
+            'Binance_{0.cto:s}{0.cfrom:s}_{0.interval:s}.h5'.format(self))
 
         # See if the currency pair is already cached:
         if path.exists(file_name):
@@ -471,7 +471,7 @@ class HistoricDataAPIBinance(HistoricData):
             self.cfrom, self.cto = self.cto, self.cfrom
             self.unit = self.cto + '/' + self.cfrom
             self.file_name = flipped_file_name
-            self.currency_pair = '{0.cto:s}{0.cfrom:s}'.format(self)
+            self.currency_pair = '{0.cfrom:s}{0.cto:s}'.format(self)
         else:
             # Query the API to see if the pair is available:
             try:
