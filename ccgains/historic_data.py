@@ -418,10 +418,9 @@ class HistoricDataAPI(HistoricData):
 
 
 class HistoricDataAPICoinbase(HistoricData):
-    last_query_time = pd.Timestamp.now()
 
     def __init__(self, cache_folder, unit, interval='H'):
-        """Initialize a HistoricData object which tranparently fetches data
+        """Initialize a HistoricData object which transparently fetches data
         on request (`get_price`) from the public Coinbase API:
         'https://api.pro.coinbase.com/products/:SYMBOL:/candles'
 
@@ -446,6 +445,7 @@ class HistoricDataAPICoinbase(HistoricData):
 
         # Coinbase Pro rate limit is 3 per second
         self.query_wait_time = 0.334
+        self.last_query_time = pd.Timestamp.now()
 
         self.currency_pair = '{0.cfrom:s}-{0.cto:s}'.format(self)
 
@@ -498,11 +498,9 @@ class HistoricDataAPICoinbase(HistoricData):
         now = pd.Timestamp.now()
         delta = (now - self.last_query_time).total_seconds()
 
-        log.info(f'Coinbase last_query_time: {self.last_query_time}')
         if delta < self.query_wait_time:
             log.info('Waiting %f s...', self.query_wait_time - delta)
             sleep(self.query_wait_time - delta)
-            log.info('...Continuing')
 
     def _fetch_from_api(self, start, end=None):
         """Fetch historical candlesticks (OHLC) from Coinbase API.
@@ -605,7 +603,7 @@ class HistoricDataAPICoinbase(HistoricData):
         elif response.status_code >= 400:
             err_msg = response.json()['message']
             raise ValueError(
-                'Cannot retrieve trade data from Binance '
+                'Cannot retrieve trade data from Coinbase '
                 'because of error message %s when querying URL "%s"'
                 % (err_msg, response.url))
 
