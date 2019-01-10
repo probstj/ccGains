@@ -80,6 +80,10 @@ def _json_decode_hook(obj):
     return obj
 
 
+class CurrencyTypeException(Exception):
+    pass
+
+
 class Bag(object):
     def __init__(
             self, id, dtime, currency, amount, cost_currency, cost,
@@ -210,14 +214,19 @@ class BagFIFO(object):
         self.num_created_bags = 0
         self.dump_file = path.abspath(json_dump) if json_dump else None
 
-    def _abort(self, msg):
-        """Raise ValueError with the message *msg*.
+    def _abort(self, msg, exception_type=None):
+        """Raise an exception with the message *msg*. A ValueError will be
+        raised if exception_type is not given.
+
         Before raising, the current state of the file will be saved
         to self.dump_file.
 
         """
+
+        if exception_type is None:
+            exception_type = ValueError
         self.save(self.dump_file)
-        raise ValueError(msg)
+        raise exception_type(msg)
 
     def _check_order(self, dtime):
         """Raise ValueError if *dtime* is older than the last
@@ -431,10 +440,14 @@ class BagFIFO(object):
         self._check_order(dtime)
         exchange = str(exchange).capitalize()
         amount = Decimal(amount)
+        currency = currency.upper()
+
         if amount <= 0:
             return
         if currency == self.currency:
-            self._abort('Buying the base currency is not possible.')
+            self._abort(
+                'Buying the base currency is not possible.',
+                CurrencyTypeException)
         if exchange not in self.bags:
             self.bags[exchange] = []
         self.bags[exchange].append(Bag(
@@ -503,12 +516,17 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
+
+        amount = Decimal(amount)
         if amount <= 0: return
+
         exchange = str(exchange).capitalize()
+        currency = currency.upper()
         if currency == self.currency:
             self._abort(
-                    'Withdrawing the base currency is not possible.')
-        amount = Decimal(amount)
+                    'Withdrawing the base currency is not possible.',
+                    CurrencyTypeException)
+
         fee = Decimal(fee)
         if exchange not in self.totals:
             total = 0
@@ -577,12 +595,17 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
+
+        amount = Decimal(amount)
         if amount <= 0: return
+
         exchange = str(exchange).capitalize()
+        currency = currency.upper()
         if currency == self.currency:
             self._abort(
-                'Depositing the base currency is not possible.')
-        amount = Decimal(amount)
+                'Depositing the base currency is not possible.',
+                CurrencyTypeException)
+
         fee = Decimal(fee)
 
         # Move bags to self.bags:
@@ -719,9 +742,11 @@ class BagFIFO(object):
         fee_ratio = Decimal(fee_ratio)
         if amount <= 0: return
         exchange = str(exchange).capitalize()
+        currency = currency.upper()
         if currency == self.currency:
             self._abort(
-                'Payments with the base currency are not relevant here.')
+                'Payments with the base currency are not relevant here.',
+                CurrencyTypeException)
         if exchange not in self.bags or not self.bags[exchange]:
             self._abort(
                 "You don't own any funds on %s" % exchange)
