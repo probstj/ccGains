@@ -418,7 +418,6 @@ class HistoricDataAPI(HistoricData):
 
 
 class HistoricDataAPIBinance(HistoricData):
-    last_query_time = pd.Timestamp.now()
 
     def __init__(self, cache_folder, unit, interval='H'):
         """Initialize a HistoricData object which will transparently fetch
@@ -447,6 +446,7 @@ class HistoricDataAPIBinance(HistoricData):
         # Applicable Binance rate limit is 1000 / min (for aggTrade requests)
         self.query_wait_time = 0.06
         self.max_trades_per_query = 1000
+        self.last_query_time = pd.Timestamp.now()
 
         # Binance does not use any separator between base and quote assets
         # Binance pairs are listed as 'from to' (e.g. XRPBTC is price of 1 XRP in BTC)
@@ -512,7 +512,7 @@ class HistoricDataAPIBinance(HistoricData):
         """Fetch historical trading data from API.
 
         :param start: UNIX timestamp (seconds); Start of range to fetch.
-        :param end: UNIT timestamp (seconds); End of range to fetch.
+        :param end: UNIX timestamp (seconds); End of range to fetch.
             If None (default), will fetch a range of one day, i.e.
             end will be `start + 86400`.
         :returns: tuple (number of fetched trades, resampled data)
@@ -607,7 +607,7 @@ class HistoricDataAPIBinance(HistoricData):
         try:
             url = self.url + self.command
             req = requests.get(url, params=params)
-            self.last_query_time = now
+            self.last_query_time = pd.Timestamp.now()
         except requests.ConnectionError:
             raise self.connection_error
 
