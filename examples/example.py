@@ -90,14 +90,14 @@ def main():
 
 
     #########################################################################
-    # 4. Create the 'BagFIFO', which calculates the capital gains           #
+    # 4. Create the 'BagQueue', which calculates the capital gains           #
     #########################################################################
 
-    # Create the BagFIFO object that calculates taxable profit from trades
+    # Create the BagQueue object that calculates taxable profit from trades
     # using the first-in/first-out method:
     # (this needs to know your native fiat currency and the CurrencyRelation
     # created above)
-    bf = ccgains.BagFIFO('EUR', rel)
+    bf = ccgains.BagQueue('EUR', rel)
 
 
     #########################################################################

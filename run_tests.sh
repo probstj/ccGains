@@ -13,7 +13,7 @@ python -m unittest discover
 #python tests/test_relations.py
 
 # only a single test from a TestCase, e.g.:
-#python -m unittest tests.test_bags.TestBagFIFO.test_trading_profits_no_fees
+#python -m unittest tests.test_bags.TestBagQueue.test_trading_profits_no_fees
 # or
-#python tests/test_bags.py TestBagFIFO.test_trading_profits_no_fees
+#python tests/test_bags.py TestBagQueue.test_trading_profits_no_fees
 

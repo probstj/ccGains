@@ -157,14 +157,14 @@ class Bag(object):
         return json.dumps(self.__dict__, default=str)
 
 
-class BagFIFO(object):
+class BagQueue(object):
     def __init__(
             self, base_currency, relation, json_dump='./precrash.json'):
-        """Create a BagFIFO object.
+        """Create a BagQueue object.
 
         This is the class that processes trades, handles all bags (i.e.
         creating and spending them) and calculates the capital gains.
-        After calculation, the member BagFIFO.report provides methods
+        After calculation, the member BagQueue.report provides methods
         to create reports.
 
         :param base_currency:
@@ -176,14 +176,14 @@ class BagFIFO(object):
         :param relation:
             A CurrencyRelation object which serves exchange rates
             between all currencies involved in trades which will later
-            be added to this BagFIFO.
+            be added to this BagQueue.
             If solely trades involving base_currency will be processed,
             a CurrencyRelation object is not necessary and can be
             `None`. In this case, if a trade between non-base
             currencies is encountered, an exception will be raised.
 
         :param json_dump: (filename)
-            If specified, the state of the BagFIFO will be saved as
+            If specified, the state of the BagQueue will be saved as
             JSON formatted file with this file name just before an error
             is raised due to missing or conflicting data. If the error
             is fixed, the state can be loaded from this file and the
@@ -253,7 +253,7 @@ class BagFIFO(object):
 
     def to_json(self, **kwargs):
         """Return a JSON formatted string representation of the current
-        state of this BagFIFO and its list of bags.
+        state of this BagQueue and its list of bags.
 
         As an external utility, self.relation will not be included in
         this string.
@@ -268,7 +268,7 @@ class BagFIFO(object):
             default=_json_encode_default, **kwargs)
 
     def save(self, filepath_or_buffer):
-        """Save the current state of this BagFIFO and its list of bags
+        """Save the current state of this BagQueue and its list of bags
         to a JSON formatted file, so that it can later be restored
         with `self.load`.
 
@@ -293,10 +293,10 @@ class BagFIFO(object):
 
 
     def load(self, filepath_or_buffer):
-        """Restore a previously saved state of a BagFIFO and its list
+        """Restore a previously saved state of a BagQueue and its list
         of bags from a JSON formatted file.
 
-        Everything from the current BagFIFO object will be overwritten
+        Everything from the current BagQueue object will be overwritten
         with the file's contents.
 
         :param filepath_or_buffer:
@@ -672,7 +672,7 @@ class BagFIFO(object):
             Provide a custom rate for conversion of *currency* to the
             base currency. Usually (i.e. if this is None), the rate is
             fetched from the CurrencyRelation object provided when this
-            BagFIFO object was created. In some cases, one should rather
+            BagQueue object was created. In some cases, one should rather
             provide a rate, for example when base currency was bought
             with this payment, meaning a more specific rate for this
             trade can be provided than relying on the averaged historic
