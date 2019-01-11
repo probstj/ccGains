@@ -27,7 +27,7 @@
 import logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-from .historic_data import HistoricDataAPI, HistoricDataCSV
+from .historic_data import HistoricDataAPI, HistoricDataCSV, HistoricDataAPIBinance
 from .relations import CurrencyRelation
 from .trades import Trade, TradeHistory
 from .bags import Bag, BagFIFO
