@@ -417,6 +417,247 @@ class HistoricDataAPI(HistoricData):
             return self.data
 
 
+class HistoricDataAPIBinance(HistoricData):
+
+    def __init__(self, cache_folder, unit, interval='H'):
+        """Initialize a HistoricData object which will transparently fetch
+        data on request (`get_price`) from the public Binance API:
+        https://api.binance.com/api/v1/aggTrades
+
+        For faster loading times on future calls, a HDF5 file is created
+        from the requested data and used transparently the next time a
+        request for the same day and pair is made. These HDF5 files are
+        saved in *cache_folder*.
+
+        The *unit* must be a string in the form
+        'currency_one/currency_two', e.g. 'NEO/BTC'.
+
+        The data will be resampled by calculating the weighted price
+        for interval steps specified by *interval*. See:
+        http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+        for possible values.
+        """
+
+        super(HistoricDataAPIBinance, self).__init__(unit)
+        self.interval = interval
+        self.url = 'https://api.binance.com/api/v1'
+        self.command = '/klines'
+
+        # Applicable Binance rate limit is 1000 / min (for aggTrade requests)
+        self.query_wait_time = 0.06
+        self.max_trades_per_query = 1000
+        self.last_query_time = pd.Timestamp.now()
+
+        # Binance does not use any separator between base and quote assets
+        # Binance pairs are listed as 'from to' (e.g. XRPBTC is price of 1 XRP in BTC)
+        self.currency_pair = '{0.cfrom:s}{0.cto:s}'.format(self)
+
+        self.connection_error = requests.ConnectionError(
+            'Price data for %s could not be loaded from %s '
+            '- are you online?' % (self.currency_pair, self.url))
+
+        file_name = path.join(
+            cache_folder,
+            'Binance_{0.cfrom:s}{0.cto:s}_{0.interval:s}.h5'.format(self))
+        # Flipped currency pair:
+        flipped_file_name = path.join(
+            cache_folder,
+            'Binance_{0.cto:s}{0.cfrom:s}_{0.interval:s}.h5'.format(self))
+
+        # See if the currency pair is already cached:
+        if path.exists(file_name):
+            self.file_name = file_name
+        elif path.exists(flipped_file_name):
+            # Flip currency pair
+            self.cfrom, self.cto = self.cto, self.cfrom
+            self.unit = self.cto + '/' + self.cfrom
+            self.file_name = flipped_file_name
+            self.currency_pair = '{0.cfrom:s}{0.cto:s}'.format(self)
+        else:
+            # Query the API to see if the pair is available:
+            try:
+                req = requests.get(self.url + '/exchangeInfo')
+            except requests.ConnectionError:
+                raise self.connection_error
+
+            known_symbols = [info['symbol'] for info in req.json()['symbols']]
+
+            if self.currency_pair in known_symbols:
+                self.file_name = file_name
+            else:
+                # Try flipped currency pair
+                flipped_currency_pair = '{0.cto:s}{0.cfrom:s}'.format(self)
+                if flipped_currency_pair not in known_symbols:
+                    raise ValueError(
+                        'Neither currency pair "{0:s}" nor pair "{1:s}" is '
+                        'available on "{2:s}".'.format(
+                            self.currency_pair, flipped_currency_pair, self.url))
+                # Flip currency pair
+                self.cfrom, self.cto = self.cto, self.cfrom
+                self.unit = self.cto + '/' + self.cfrom
+                self.currency_pair = flipped_currency_pair
+                self.file_name = flipped_file_name
+
+    def _wait_if_needed(self):
+        # Wait for the minimum call time to pass:
+        now = pd.Timestamp.now()
+        delta = (now - self.last_query_time).total_seconds()
+
+        if delta < self.query_wait_time:
+            log.info('waiting %f s', self.query_wait_time - delta)
+            sleep(self.query_wait_time - delta)
+            log.info('continuing')
+
+    def _fetch_from_api(self, start, end=None):
+        """Fetch historical trading data from API.
+
+        :param start: UNIX timestamp (seconds); Start of range to fetch.
+        :param end: UNIX timestamp (seconds); End of range to fetch.
+            If None (default), will fetch a range of one day, i.e.
+            end will be `start + 86400`.
+        :returns: tuple (number of fetched trades, resampled data)
+
+        The returned data will be resampled to `self.interval`. The
+        data will consist of weighted historical prices, averaged over
+        each interval using the traded amounts as weights.
+
+        In case there is a limit on the number of trades returned by
+        the API, several queries will be sent to capture the full
+        range of prices. Binance limit is 1000 per response
+        """
+
+        end = end or start + 86400  # Fetch a time span of one day:
+
+        # Binance uses milliseconds instead of seconds
+        start = int(start * 1000)
+        end = int(end * 1000)
+
+        # Set up to pull data from the API
+        kline_interval = '1m'
+        interval_ms = pd.Timedelta(kline_interval).total_seconds() * 1000
+        req_params = {
+            'symbol': self.currency_pair,
+            'interval': kline_interval,
+            'limit': self.max_trades_per_query
+        }
+
+        chunk_delta = int(interval_ms * self.max_trades_per_query)
+        chunk_start = start
+        remaining_time = pd.Timedelta((end - start), 'ms')
+
+        df = pd.DataFrame()
+
+        while remaining_time > pd.Timedelta(0):
+            # Set up to get the next chunk
+            chunk_end = min(end, chunk_start + chunk_delta)
+
+            req_params.update({'startTime': chunk_start, 'endTime': chunk_end})
+            response = self._call_api(req_params)
+
+            klines = pd.DataFrame(
+                response.json(),
+                columns=[
+                    'OpenTime',
+                    'Open', 'High', 'Low', 'Close', 'Volume',
+                    'CloseTime',
+                    'QuoteAssetVolume', 'NumTrades',
+                    'TakerBuyBaseAssetVolume', 'TakerBuyQuoteAssetVolume',
+                    'Ignore'])
+            # Drop the columns we don't need
+            klines = klines.iloc[:, [4, 5, 6]]
+            # Index by interval close time and add to previous results
+            klines.CloseTime = pd.to_datetime(klines.CloseTime, unit='ms')
+            klines = klines.astype({'Close': float, 'Volume': float})
+            klines.set_index('CloseTime', inplace=True)
+            df = df.append(klines)
+
+            # Set up for next loop (if needed). If less than limit klines were
+            # returned, that means we got all we needed so OK to be negative
+            remaining_time -= self.max_trades_per_query * pd.Timedelta(kline_interval)
+            chunk_start = chunk_end
+
+            log.info('Fetched historical price data with request: %s', response.url)
+
+        # Get weighted prices, resampled with interval:
+        # (this will only return one column, the weighted prices;
+        # the total volume won't be needed anymore)
+        data = resample_weighted_average(
+            df, self.interval, 'Close', 'Volume')
+
+        # In case the data has been upsampled (some events
+        # being more separated than interval), the resulting
+        # Series will have some NaNs. Forward-fill them
+        # with the last prices before:
+        data.ffill(inplace=True)
+
+        if data.index.tzinfo is None:
+            data.index = data.index.tz_localize('UTC')
+
+        return len(df), data
+
+    def _call_api(self, params):
+        """Call Binance API with *params*, validate the response,
+        and return the results
+        """
+
+        # Be nice to the API
+        self._wait_if_needed()
+
+        # Make the API call
+        try:
+            url = self.url + self.command
+            req = requests.get(url, params=params)
+            self.last_query_time = pd.Timestamp.now()
+        except requests.ConnectionError:
+            raise self.connection_error
+
+        # Check for valid response:
+        if req.status_code in [429, 418]:
+            raise ConnectionError('Binance Rate limits exceeded')
+        elif req.status_code >= 400:
+            err_code = req.json()['code']
+            err_msg = req.json()['msg']
+            raise ValueError(
+                'Cannot retrieve trade data from Binance '
+                'because of error code %s (%s) when querying URL "%s"'
+                % (err_code, err_msg, req.url))
+
+        return req
+
+    def prepare_request(self, dtime):
+        """Return a pandas DataFrame which contains the data for the
+        requested datetime *dtime*.
+        """
+
+        dtime = pd.Timestamp(dtime).tz_convert(tz.tzutc())
+        key = "d{a:04d}{m:02d}{d:02d}".format(
+            a=dtime.year, m=dtime.month, d=dtime.day)
+        with pd.HDFStore(self.file_name, mode='a') as store:
+            if key in store:
+                try:
+                    self.data = store.get(key)
+                    # Check whether data can be accessed:
+                    self.data.at[pd.Timestamp(dtime).floor(self.data.index.freq)]
+                    return self.data
+                except (KeyError, AttributeError):
+                    # In case of the hdf5 file got corrupted somehow,
+                    # with the requested date missing from the data,
+                    # reload the data from the API:
+                    log.warning(
+                        'Date %s missing in cached data. '
+                        'Repeating request to API', dtime)
+
+            # We need to fetch the data from the Binance API
+            start = dtime.floor('D').value // 10 ** 9
+            count, self.data = self._fetch_from_api(start)
+
+            # For Binance, _fetch_from_api() already ensures that all data
+            # is collected (repeating subsequent queries if needed)
+
+            store.put(key, self.data, format="fixed")
+            return self.data
+
+
 class HistoricDataAPICoinbase(HistoricData):
 
     def __init__(self, cache_folder, unit, interval='H'):
@@ -641,4 +882,3 @@ class HistoricDataAPICoinbase(HistoricData):
 
             store.put(key, self.data, format="fixed")
             return self.data
-
