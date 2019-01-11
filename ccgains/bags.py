@@ -177,6 +177,10 @@ class BagFIFO(object):
             A CurrencyRelation object which serves exchange rates
             between all currencies involved in trades which will later
             be added to this BagFIFO.
+            If solely trades involving base_currency will be processed,
+            a CurrencyRelation object is not necessary and can be
+            `None`. In this case, if a trade between non-base
+            currencies is encountered, an exception will be raised.
 
         :param json_dump: (filename)
             If specified, the state of the BagFIFO will be saved as
@@ -747,6 +751,11 @@ class BagFIFO(object):
         # exchange rate at time of payment:
         if custom_rate is not None:
             rate = Decimal(custom_rate)
+        elif self.relation is None:
+            self._abort(
+                'Could not fetch the price for currency_pair %s_%s on '
+                '%s. Please provide a CurrencyRelation object.' % (
+                        currency, self.currency, dtime))
         else:
             try:
                 rate = Decimal(
