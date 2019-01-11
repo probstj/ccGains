@@ -4,7 +4,7 @@ The ccGains (cryptocurrency gains) package provides a python library for calcula
 
 Some of its features are:
 
-  - calculates the capital gains using the first-in/first out (FIFO) principle,
+  - calculates the capital gains using the first-in/first-out (FIFO), last-in/first-out (LIFO), lowest-price/first-out (LPFO) principles,
   - creates capital gains reports as CSV, HTML or PDF (instantly ready to print out for the tax office),
   - can create a more detailed capital gains report outlining the calculation and used bags,
   - differs between short and long term gains (amounts held for less or more than a year),
