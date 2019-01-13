@@ -30,6 +30,7 @@ import unittest
 
 from ccgains import relations
 
+
 class TestCurrencyRelation(unittest.TestCase):
 
     def setUp(self):
@@ -44,10 +45,10 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
     def test_update_pairs_two_separate(self):
         # Create dummy pairs:
@@ -60,10 +61,10 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
     def test_update_pairs_two_joined(self):
         # Create dummy pairs:
@@ -78,10 +79,10 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
     def test_update_pairs_two_joinedreverse(self):
         # Create dummy pairs:
@@ -96,10 +97,10 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
     def test_update_pairs_two_separate_then_joined(self):
         # Diff for this test case might be long. Disable length constraint:
@@ -128,17 +129,17 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
         # make this a dummy HistoricData object:
         self.cfrom, self.cto = pair_extra
         self.rel.add_historic_data(self)
 
         d.update(d_extra)
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
         # If everything went well, reset maxDiff:
         self.maxDiff = oldmaxDiff
@@ -170,17 +171,17 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
         # make this a dummy HistoricData object:
         self.cfrom, self.cto = pair_extra
         self.rel.add_historic_data(self)
 
         d.update(d_extra)
-        self.assertDictEqual(self.rel.pairs, d)
+        self.assertDictEqual(self.rel.recipes, d)
 
         # If everything went well, reset maxDiff:
         self.maxDiff = oldmaxDiff
@@ -192,7 +193,7 @@ class TestCurrencyRelation(unittest.TestCase):
 
         # Make dummy historic data dict:
         for p in pairs:
-            self.rel.hdict[p] = None
+            self.rel.historic_prices[p] = None
         self.rel.update_available_pairs()
 
         # make this a dummy HistoricData object:
@@ -204,11 +205,11 @@ class TestCurrencyRelation(unittest.TestCase):
         self.cfrom, self.cto = direct_pair
         self.rel.add_historic_data(self)
 
-        self.assertTupleEqual(
-                self.rel.pairs[direct_pair],
+        self.assertEqual(
+                self.rel.recipes[direct_pair],
                 (1, [('A', 'D', False)]))
-        self.assertTupleEqual(
-                self.rel.pairs[direct_pair[::-1]],
+        self.assertEqual(
+                self.rel.recipes[direct_pair[::-1]],
                 (1, [('A', 'D', True)]))
 
 

@@ -422,7 +422,7 @@ class HistoricDataAPIBinance(HistoricData):
     def __init__(self, cache_folder, unit, interval='H'):
         """Initialize a HistoricData object which will transparently fetch
         data on request (`get_price`) from the public Binance API:
-        https://api.binance.com/api/v1/aggTrades
+        https://api.binance.com/api/v1/klines
 
         For faster loading times on future calls, a HDF5 file is created
         from the requested data and used transparently the next time a

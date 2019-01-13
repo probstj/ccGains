@@ -26,6 +26,97 @@
 
 from __future__ import division
 
+from collections import namedtuple
+from functools import total_ordering
+from typing import Dict, List, Tuple
+
+
+class CurrencyPair(namedtuple("CurrencyPair", ['base', 'quote'])):
+    """CurrencyPair(base, quote)"""
+
+    def reversed(self):
+        return CurrencyPair(self.quote, self.base)
+
+
+class RecipeStep:
+    def __init__(self, base, quote, reciprocal):
+        self.base = base
+        self.quote = quote
+        self.reciprocal = reciprocal
+
+    def as_recipe(self):
+        return Recipe(1, [self])
+
+    def reversed(self):
+        """Return a copy of this recipe step with reciprocal set opposite"""
+        return RecipeStep(self.base, self.quote, not self.reciprocal)
+
+    def __getitem__(self, item):
+        if item == 0:
+            return self.base
+        elif item == 1:
+            return self.quote
+        elif item == 2:
+            return self.reciprocal
+        else:
+            raise IndexError
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        elif isinstance(other, tuple):
+            return (self.base, self.quote, self.reciprocal) == other
+        return NotImplemented
+
+    def __add__(self, other):
+        if isinstance(other, Recipe):
+            return Recipe(other.num_steps + 1, [self] + other.recipe_steps)
+        elif isinstance(other, self.__class__):
+            return Recipe(2, [self, other])
+        raise NotImplementedError
+
+
+@total_ordering
+class Recipe:
+    def __init__(self, num_steps: int, recipe_steps: List[RecipeStep]):
+        self.num_steps = num_steps
+        self.recipe_steps = recipe_steps
+
+    def reversed(self):
+        reversed_steps = [step.reversed() for step in reversed(self.recipe_steps)]
+        return Recipe(self.num_steps, reversed_steps)
+
+    def __getitem__(self, item):
+        if item == 0:
+            return self.num_steps
+        elif item == 1:
+            return self.recipe_steps
+        else:
+            raise IndexError
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        elif isinstance(other, tuple):
+            return (self.num_steps, self.recipe_steps) == other
+        return NotImplemented
+
+    def __gt__(self, other):
+        if isinstance(other, self.__class__):
+            return self.num_steps > other.num_steps
+        raise NotImplementedError
+
+    def __add__(self, other):
+        if isinstance(other, self.__class__):
+            return Recipe(self.num_steps + other.num_steps, self.recipe_steps + other.recipe_steps)
+        elif isinstance(other, RecipeStep):
+            return Recipe(self.num_steps + 1, self.recipe_steps + [other])
+        raise NotImplementedError
+
+
+RecipeDict = Dict[CurrencyPair, Recipe]
+
+
 class CurrencyRelation(object):
     def __init__(self, *args):
         """Create a CurrencyRelation object. This object contains
@@ -40,9 +131,10 @@ class CurrencyRelation(object):
             method.
 
         """
-        self.hdict = {}
+        self.historic_prices = {}
         for hist_data in args:
-            self.hdict[(hist_data.cfrom, hist_data.cto)] = hist_data
+            key = CurrencyPair(hist_data.cfrom, hist_data.cto)
+            self.historic_prices[key] = hist_data
 
         # self.pairs is a dictionary with keys
         # `(from_currency, to_currency)` and values
@@ -53,7 +145,7 @@ class CurrencyRelation(object):
         # directly available in self.hdict that must be applied in
         # turn (maybe reciprocal) to achieve the desired translation
         # from `from_currency` to `to_currency`.
-        self.pairs = {}
+        self.recipes = {}  # type: RecipeDict
         self.update_available_pairs()
 
     def add_historic_data(self, hist_data):
@@ -61,8 +153,8 @@ class CurrencyRelation(object):
         the same unit has already been added, it will be updated.
 
         """
-        self.hdict[(hist_data.cfrom, hist_data.cto)] = hist_data
-        self.update_available_pairs((hist_data.cfrom, hist_data.cto))
+        self.historic_prices[CurrencyPair(hist_data.cfrom, hist_data.cto)] = hist_data
+        self.update_available_pairs(CurrencyPair(hist_data.cfrom, hist_data.cto))
 
     def update_available_pairs(self, newtuple=None):
         """Update internal list of pairs with available historical rate.
@@ -76,97 +168,86 @@ class CurrencyRelation(object):
         """
         if not newtuple:
             # clear pairs list:
-            self.pairs = {}
-            to_add = self.hdict.keys()
+            self.recipes = {}  # type: RecipeDict
+            to_add = list(self.historic_prices.keys())
         else:
             fcur, tcur = (c.upper() for c in newtuple)
             # check if newtuple provided is really available:
-            if (fcur, tcur) not in self.hdict:
-                if (tcur, fcur) not in self.hdict:
+            if CurrencyPair(fcur, tcur) not in self.historic_prices:
+                if CurrencyPair(tcur, fcur) not in self.historic_prices:
                     raise ValueError(
                         "Supplied new pair {} has no historical data. "
                         "Please provide it with `add_historic_data` first."
                         "".format(str((fcur, tcur))))
                 else:
-                    to_add = [(tcur, fcur)]
+                    to_add = [CurrencyPair(tcur, fcur)]
             else:
-                to_add = [(fcur, tcur)]
+                to_add = [CurrencyPair(fcur, tcur)]
 
-        for new1, new2 in to_add:
-            foundA = []
-            foundB = []
-            # first compare new pair with available pairs and try to add
-            # new combined relations:
-            for (cfrom, cto), (count, recipe) in tuple(self.pairs.items()):
-                if new2 == cfrom and new1 != cto:
-                    # new pair can be added before other recipe
-                    newp = [(new1, cto),
-                            (count + 1, [(new1, new2, False)] + recipe)]
-                    # reverse direction:
-                    newr = [(cto, new1),
-                            (count + 1, self.pairs[(cto, cfrom)][1]
-                                        + [(new1, new2, True)]      )]
-                    # in case it's already available, only add if
-                    # new recipe is shorter:
-                    if (newp[0] not in self.pairs
-                        or self.pairs[newp[0]][0] > count + 1):
-                            self.pairs[newp[0]] = newp[1]
-                            # also add the reverse direction:
-                            self.pairs[newr[0]] = newr[1]
-                            # keep track of addition, will be needed later:
-                            foundB.append((cfrom, cto, count, recipe))
-                elif new1 == cto and new2 != cfrom:
-                    # new pair can be added after other recipe:
-                    newp = [(cfrom, new2),
-                            (count + 1, recipe + [(new1, new2, False)])]
-                    # reverse direction:
-                    newr = [(new2, cfrom),
-                            (count + 1, [(new1, new2, True)]
-                                        + self.pairs[(cto, cfrom)][1])]
-                    # in case it's already available, only add if
-                    # new recipe is shorter:
-                    if (newp[0] not in self.pairs
-                        or self.pairs[newp[0]][0] > count + 1):
-                            self.pairs[newp[0]] = newp[1]
-                            # also add the reverse direction:
-                            self.pairs[newr[0]] = newr[1]
-                            # keep track of addition, will be needed later:
-                            foundA.append((cfrom, cto, count, recipe))
-            # If the new pair could be added to the beginning aswell as
+        def is_symmetric(first: CurrencyPair, second: CurrencyPair) -> bool:
+            return first.quote == second.base and second.quote == first.base
+
+        def can_add_before(new: CurrencyPair, existing: CurrencyPair) -> bool:
+            return new.quote == existing.base and not is_symmetric(new, existing)
+
+        def can_add_after(new: CurrencyPair, existing: CurrencyPair) -> bool:
+            return new.base == existing.quote and not is_symmetric(new, existing)
+
+        def update_if_shorter(pair: CurrencyPair, recipe: Recipe) -> bool:
+            if pair not in self.recipes or recipe < self.recipes[pair]:
+                self.recipes[pair] = recipe
+                self.recipes[pair.reversed()] = recipe.reversed()
+                return True
+            return False
+
+        # Loop through each HistoricPrice
+        for new_base, new_quote in to_add:
+            new_after = []  # type: List[Tuple[CurrencyPair, Recipe]]
+            new_before = []  # type: List[Tuple[CurrencyPair, Recipe]]
+
+            single_pair = CurrencyPair(new_base, new_quote)
+            single_step = RecipeStep(single_pair.base, single_pair.quote, False)
+
+            for existing_pair, existing_recipe in tuple(self.recipes.items()):
+
+                if can_add_before(single_pair, existing_pair):
+                    before_pair = CurrencyPair(single_pair.base, existing_pair.quote)
+                    new_recipe = single_step + existing_recipe
+
+                    # If already known, only add if new recipe_steps is shorter:
+                    if update_if_shorter(before_pair, new_recipe):
+                        # keep track of addition, will be needed later:
+                        new_before.append((existing_pair, existing_recipe))
+
+                elif can_add_after(single_pair, existing_pair):
+                    # New pair can be added after existing recipe steps:
+                    new_pair = CurrencyPair(existing_pair.base, single_pair.quote)
+                    new_recipe = existing_recipe + single_step
+
+                    # If already known, only add if new recipe_steps is shorter:
+                    if update_if_shorter(new_pair, new_recipe):
+                        # keep track of addition, will be needed later:
+                        new_after.append((existing_pair, existing_recipe))
+
+            # If the new pair could be added to the beginning as well as
             # to the end of existing recipes, there are also new recipes
             # where the new pair joins two old recipes together:
-            for fa in foundA:
-                for fb in foundB:
-                    newp = [(fa[0], fb[1]),
-                            (fa[2] + fb[2] + 1, fa[3]
-                                                + [(new1, new2, False)]
-                                                + fb[3])]
-                    # reverse direction:
-                    newr = [(fb[1], fa[0]),
-                            (fa[2] + fb[2] + 1,
-                                 self.pairs[(fb[1], fb[0])][1]
-                                 + [(new1, new2, True)]
-                                 + self.pairs[(fa[1], fa[0])][1])]
-                    # in case it's already available, only add if
-                    # new recipe is shorter:
-                    if (newp[0] not in self.pairs
-                        or self.pairs[newp[0]][0] > fa[2] + fb[2] + 1):
-                            self.pairs[newp[0]] = newp[1]
-                            # also add the reverse direction:
-                            self.pairs[newr[0]] = newr[1]
-            # And finally, don't forget to add the new pair by itself:
-            newp = [(new1, new2), (1, [(new1, new2, False)])]
-            # reverse direction:
-            newr = [(new2, new1), (1, [(new1, new2, True)])]
-            # in case it's already available, only add if
-            # new recipe is shorter:
-            if (newp[0] not in self.pairs
-                or self.pairs[newp[0]][0] > 1):
-                    self.pairs[newp[0]] = newp[1]
-                    # also add the reverse direction:
-                    self.pairs[newr[0]] = newr[1]
+            for pair_a, recipe_a in new_after:
+                for pair_b, recipe_b in new_before:
 
-        return self.pairs
+                    new_pair = CurrencyPair(pair_a.base, pair_b.quote)
+                    new_recipe = recipe_a + single_step + recipe_b
+
+                    # If already known, only add if new recipe_steps is shorter:
+                    update_if_shorter(new_pair, new_recipe)
+
+            # And finally, don't forget to add the new pair by itself:
+            base_recipe = single_step.as_recipe()
+
+            # If already known, only add if new recipe_steps is shorter:
+            update_if_shorter(single_pair, base_recipe)
+
+        return self.recipes
 
     def get_rate(self, dtime, from_currency, to_currency):
         """Return the rate for conversion of *from_currency* to
@@ -176,14 +257,14 @@ class CurrencyRelation(object):
         been added with `add_historic_data` before, an indirect route
         using multiple added pairs is tried. If this also fails, a
         KeyError is raised.
-
         """
-        recipe = self.pairs[
-                (from_currency.upper(), to_currency.upper())][1]
+
+        recipe_pair = CurrencyPair(from_currency.upper(), to_currency.upper())
+        steps = self.recipes[recipe_pair].recipe_steps
         result = 1
-        for fcur, tcur, inverse in recipe:
+        for base_cur, quote_cur, inverse in steps:
             if not inverse:
-                result *= self.hdict[(fcur, tcur)].get_price(dtime)
+                result *= self.historic_prices[CurrencyPair(base_cur, quote_cur)].get_price(dtime)
             else:
-                result /= self.hdict[(fcur, tcur)].get_price(dtime)
+                result /= self.historic_prices[CurrencyPair(base_cur, quote_cur)].get_price(dtime)
         return result
