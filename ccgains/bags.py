@@ -440,7 +440,7 @@ class BagFIFO(object):
         self._check_order(dtime)
         exchange = str(exchange).capitalize()
         amount = Decimal(amount)
-        currency = currency.upper()
+        currency = currency.upper()  # self.currency is uppercase
 
         if amount <= 0:
             return
@@ -516,16 +516,15 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
-
-        amount = Decimal(amount)
         if amount <= 0: return
-
         exchange = str(exchange).capitalize()
-        currency = currency.upper()
+        currency = currency.upper()  # self.currency is upper.
         if currency == self.currency:
-            self._abort(
-                    'Withdrawing the base currency is not possible.',
-                    CurrencyTypeException)
+            log.warning(
+                "Withdrawing the base currency is not supported and will be "
+                "ignored. If this was not intentional, it could indicate "
+                "using the wrong append...csv() method")
+            return
 
         fee = Decimal(fee)
         if exchange not in self.totals:
@@ -595,16 +594,15 @@ class BagFIFO(object):
 
         """
         self._check_order(dtime)
-
-        amount = Decimal(amount)
         if amount <= 0: return
-
         exchange = str(exchange).capitalize()
-        currency = currency.upper()
+        currency = currency.upper()  # self.currency is already uppercase
         if currency == self.currency:
-            self._abort(
-                'Depositing the base currency is not possible.',
-                CurrencyTypeException)
+            log.warning(
+                "Depositing the base currency is not supported and will "
+                "be ignored. If this was not intentional, it could indicate "
+                "using the wrong append...csv() method")
+            return
 
         fee = Decimal(fee)
 
@@ -742,10 +740,10 @@ class BagFIFO(object):
         fee_ratio = Decimal(fee_ratio)
         if amount <= 0: return
         exchange = str(exchange).capitalize()
-        currency = currency.upper()
+        currency = currency.upper()  # self.currency is already uppercase
         if currency == self.currency:
             self._abort(
-                'Payments with the base currency are not relevant here.',
+                'Payments with the base currency are not supported.',
                 CurrencyTypeException)
         if exchange not in self.bags or not self.bags[exchange]:
             self._abort(
