@@ -26,12 +26,11 @@
 
 from __future__ import division
 
-from collections import namedtuple
 from functools import total_ordering
-from typing import List, Tuple, Dict
+from typing import Dict, List, NamedTuple, Tuple
 
 
-class CurrencyPair(namedtuple("CurrencyPair", ['base', 'quote'])):
+class CurrencyPair(NamedTuple("CurrencyPair", [("base", str), ("quote", str)])):
     """CurrencyPair(base, quote)"""
 
     def reversed(self):
@@ -46,21 +45,60 @@ class CurrencyPair(namedtuple("CurrencyPair", ['base', 'quote'])):
     def __radd__(self, other):
         if isinstance(other, CurrencyPair):
             return CurrencyPair(other.base, self.quote)
+        raise NotImplementedError
 
-    def __str__(self):
+    def __repr__(self):
         return "<CurrencyPair> ({0.base}, {0.quote})".format(self)
 
 
+class RecipeStep(
+    NamedTuple("RecipeStep", [("base", str), ("quote", str), ("reciprocal", bool)])
+):
+    """One step in a conversion recipe, indicating base (from) currency, quote (to)
+    currency, and whether the reciprocal of the price should be used for this step.
+    """
+
+    def as_recipe(self):
+        """Create a Recipe (with one step) from this RecipeStep"""
+        return Recipe(1, [self])
+
+    def reversed(self):
+        """Return a copy of this recipe step with reciprocal set opposite"""
+        return RecipeStep(self.base, self.quote, not self.reciprocal)
+
+    def __add__(self, other):
+        """Adding one RecipeStep to another creates a Recipe.
+
+        Adding a Recipe to a RecipeStep creates a new Recipe with the 'other'
+        Recipe's steps at the end of the new list of recipe steps
+        """
+
+        if type(other) == Recipe:
+            return Recipe(other.num_steps + 1, [self] + other.recipe_steps)
+        elif type(other) == self.__class__:
+            return Recipe(2, [self, other])
+        raise NotImplementedError
+
+    def __radd__(self, other):
+        if type(other) == Recipe:
+            return Recipe(other.num_steps + 1, other.recipe_steps + [self])
+        elif type(other) == self.__class__:
+            return Recipe(2, [other, self])
+        raise NotImplementedError
+
+
 @total_ordering
-class Recipe(namedtuple('Recipe', ['num_steps', 'recipe_steps'])):
-    """A conversion recipe made up of `num_steps` steps which are
-    given in `recipe_steps`, showing how to convert from
-    `recipe_steps[0].base` to `recipe_steps[-1].quote`
+class Recipe(
+    NamedTuple("Recipe", [("num_steps", int), ("recipe_steps", List[RecipeStep])])
+):
+    """A conversion recipe made up of `num_steps` steps which are given in
+    `recipe_steps`, showing how to convert from `recipe_steps[0].base` to
+    `recipe_steps[-1].quote`
     """
 
     def reversed(self):
-        """A reversed recipe has RecipeSteps in the reversed order,
-        and the opposite value for `reciprocal` for each step
+        """A reversed recipe has RecipeSteps in the reversed order, and the
+        opposite value for `reciprocal` for each step
         """
 
         reversed_steps = [step.reversed() for step in reversed(self.recipe_steps)]
@@ -82,8 +120,8 @@ class Recipe(namedtuple('Recipe', ['num_steps', 'recipe_steps'])):
 
         if isinstance(other, Recipe):
             return Recipe(
-                self.num_steps + other.num_steps,
-                self.recipe_steps + other.recipe_steps)
+                self.num_steps + other.num_steps, self.recipe_steps + other.recipe_steps
+            )
         elif isinstance(other, RecipeStep):
             return Recipe(self.num_steps + 1, self.recipe_steps + [other])
         raise NotImplementedError
@@ -95,46 +133,10 @@ class Recipe(namedtuple('Recipe', ['num_steps', 'recipe_steps'])):
 
         if isinstance(other, Recipe):
             return Recipe(
-                self.num_steps + other.num_steps,
-                other.recipe_steps + self.recipe_steps)
+                self.num_steps + other.num_steps, other.recipe_steps + self.recipe_steps
+            )
         elif isinstance(other, RecipeStep):
             return Recipe(self.num_steps + 1, [other] + self.recipe_steps)
-        raise NotImplementedError
-
-
-class RecipeStep(namedtuple('RecipeStep', ['base', 'quote', 'reciprocal'])):
-    """One step in a conversion recipe, indicating base (from) currency,
-    quote (to) currency, and whether the reciprocal of the price should
-    be used for this step.
-    """
-
-    def as_recipe(self):
-        """Create a Recipe (with one step) from this RecipeStep"""
-        return Recipe(1, [self])
-
-    def reversed(self):
-        """Return a copy of this recipe step with reciprocal set opposite"""
-        return RecipeStep(self.base, self.quote, not self.reciprocal)
-
-    def __add__(self, other):
-        """Adding one RecipeStep to another creates a Recipe.
-
-        Adding a Recipe to a RecipeStep creates a new Recipe with
-        the 'other' Recipe's steps at the end of the new list of
-        recipe steps
-        """
-
-        if type(other) == Recipe:
-            return Recipe(other.num_steps + 1, [self] + other.recipe_steps)
-        elif type(other) == self.__class__:
-            return Recipe(2, [self, other])
-        raise NotImplementedError
-
-    def __radd__(self, other):
-        if type(other) == Recipe:
-            return Recipe(other.num_steps + 1, other.recipe_steps + [self])
-        elif type(other) == self.__class__:
-            return Recipe(2, [other, self])
         raise NotImplementedError
 
 
@@ -143,7 +145,6 @@ RecipeDict = Dict[CurrencyPair, Recipe]
 
 
 class CurrencyRelation(object):
-    
     def __init__(self, *args):
         """Create a CurrencyRelation object. This object allows
         exchanging values between currencies, using historical
@@ -195,7 +196,8 @@ class CurrencyRelation(object):
                     raise ValueError(
                         "Supplied new pair {} has no historical data. "
                         "Please provide it with `add_historic_data` first."
-                        "".format(update_pair))
+                        "".format(update_pair)
+                    )
                 else:
                     to_add = [update_pair.reversed()]
             else:
