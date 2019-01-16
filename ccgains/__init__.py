@@ -37,5 +37,5 @@ from .historic_data import (
 
 from .relations import CurrencyRelation
 from .trades import Trade, TradeHistory
-from .bags import Bag, BagFIFO
+from .bags import Bag, BagQueue
 from .reports import PaymentReport, CapitalGainsReport

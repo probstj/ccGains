@@ -4,7 +4,7 @@ The ccGains (cryptocurrency gains) package provides a python library for calcula
 
 Some of its features are:
 
-  - calculates the capital gains using the first-in/first out (FIFO) principle,
+  - calculates the capital gains using the first-in/first-out (FIFO), last-in/first-out (LIFO), lowest-price/first-out (LPFO) principles,
   - creates capital gains reports as CSV, HTML or PDF (instantly ready to print out for the tax office),
   - can create a more detailed capital gains report outlining the calculation and used bags,
   - differs between short and long term gains (amounts held for less or more than a year),
@@ -130,14 +130,14 @@ def main():
 
 
     #########################################################################
-    # 4. Create the 'BagFIFO', which calculates the capital gains           #
+    # 4. Create the 'BagQueue', which calculates the capital gains           #
     #########################################################################
 
-    # Create the BagFIFO object that calculates taxable profit from trades
+    # Create the BagQueue object that calculates taxable profit from trades
     # using the first-in/first-out method:
     # (this needs to know your native fiat currency and the CurrencyRelation
     # created above)
-    bf = ccgains.BagFIFO('EUR', rel)
+    bf = ccgains.BagQueue('EUR', rel)
 
 
     #########################################################################

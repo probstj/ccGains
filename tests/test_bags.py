@@ -42,7 +42,7 @@ except ImportError:
     from io import StringIO
 
 
-class TestBagFIFO(unittest.TestCase):
+class TestBagQueue(unittest.TestCase):
 
     def setUp(self):
         self.logger = logging.getLogger('ccgains')
@@ -73,20 +73,20 @@ class TestBagFIFO(unittest.TestCase):
             h.close()
             self.logger.removeHandler(h)
 
-    def log_bags(self, bagfifo):
+    def log_bags(self, bagqueue):
         self.logger.info("State of bags: \n%s",
-                '    ' + '\n    '.join(str(bagfifo).split('\n')))
+                '    ' + '\n    '.join(str(bagqueue).split('\n')))
 
     def trading_set(
-            self, bagfifo, budget, currency, dayslist, currlist, feelist):
+            self, bagqueue, budget, currency, dayslist, currlist, feelist):
         """Starting with a budget, exchange all of the available budget
         every day in a given list to another currency.
 
-        The trades will be processed by *bagfifo* and exchange rates
+        The trades will be processed by *bagqueue* and exchange rates
         taken from self.rel. Make sure that the involved currencies'
         exchange rates for the given days are available in self.rel.
 
-        :param bagfifo: The BagFIFO object which will process the trades
+        :param bagqueue: The BagQueue object which will process the trades
         :param budget: The starting budget
         :param currency: The currency of starting budget
         :param dayslist: List of datetimes. On each of these days, one
@@ -104,7 +104,7 @@ class TestBagFIFO(unittest.TestCase):
         :returns: The budget after the last trade, i.e. the available
             amount of currency currlist[-1].
 
-        Examine *bagfifo* to see profits etc. afterwards.
+        Examine *bagqueue* to see profits etc. afterwards.
 
         Some intermediate results about the profits and bag's status
         will be logged (info level). To see this, add a handler to
@@ -132,11 +132,11 @@ class TestBagFIFO(unittest.TestCase):
             trade = trades.Trade(
                     'Trade', day, to_curr, to_amount,
                     current_curr, current_budget, fee_c, fee)
-            bagfifo.process_trade(trade)
-            self.log_bags(bagfifo)
+            bagqueue.process_trade(trade)
+            self.log_bags(bagqueue)
             self.logger.info(
                     "Profit so far: %.2f %s\n",
-                    bagfifo.profit[str(day.year)], bagfifo.currency)
+                    bagqueue.profit[str(day.year)], bagqueue.currency)
             current_budget = to_amount
             current_curr = to_curr
         return to_amount
@@ -145,11 +145,11 @@ class TestBagFIFO(unittest.TestCase):
         # Add handler to the logger (uncomment this to enable output)
         #self.logger.addHandler(self.handler)
 
-        bagfifo = bags.BagFIFO('EUR', self.rel)
+        bagqueue = bags.BagQueue('EUR', self.rel)
         budget=1000
         # Make up and process some trades:
         proceeds = self.trading_set(
-            bagfifo,
+            bagqueue,
             budget=budget,
             currency='EUR',
             dayslist=[self.rng[0], self.rng[2], self.rng[4]],
@@ -158,11 +158,11 @@ class TestBagFIFO(unittest.TestCase):
 
         # check correct profit:
         self.assertEqual(
-            proceeds - budget, bagfifo.profit[str(self.rng[0].year)])
-        # check that bagfifo is empty and cleaned up:
-        self.assertFalse(bagfifo.totals)
-        self.assertFalse(bagfifo.bags)
-        self.assertFalse(bagfifo.in_transit)
+            proceeds - budget, bagqueue.profit[str(self.rng[0].year)])
+        # check that bagqueue is empty and cleaned up:
+        self.assertFalse(bagqueue.totals)
+        self.assertFalse(bagqueue.bags)
+        self.assertFalse(bagqueue.in_transit)
 
     def test_trading_profits_with_fees(self):
         # Add handler to the logger (uncomment this to enable output)
@@ -179,11 +179,11 @@ class TestBagFIFO(unittest.TestCase):
                     feelist = [(0, '')] * len(currlist)
                     feelist[trade_to_fee] = (fee, currlist[trade_to_fee - i])
                     self.logger.info("Testing fee list %s" % feelist)
-                    self.logger.info("Working with new empty BagFIFO object")
-                    bagfifo = bags.BagFIFO('EUR', self.rel)
+                    self.logger.info("Working with new empty BagQueue object")
+                    bagqueue = bags.BagQueue('EUR', self.rel)
                     # Make up and process some trades:
                     proceeds = self.trading_set(
-                        bagfifo,
+                        bagqueue,
                         budget=budget,
                         currency='EUR',
                         dayslist=days,
@@ -193,11 +193,11 @@ class TestBagFIFO(unittest.TestCase):
                     # check correct profit:
                     self.assertEqual(
                         proceeds - budget,
-                        bagfifo.profit[str(self.rng[0].year)])
-                    # check that bagfifo is empty and cleaned up:
-                    self.assertFalse(bagfifo.totals)
-                    self.assertFalse(bagfifo.bags)
-                    self.assertFalse(bagfifo.in_transit)
+                        bagqueue.profit[str(self.rng[0].year)])
+                    # check that bagqueue is empty and cleaned up:
+                    self.assertFalse(bagqueue.totals)
+                    self.assertFalse(bagqueue.bags)
+                    self.assertFalse(bagqueue.in_transit)
 
     def test_bag_cost_after_trading_with_fees(self):
         # Add handler to the logger (uncomment this to enable output)
@@ -210,11 +210,11 @@ class TestBagFIFO(unittest.TestCase):
         currlist = ['BTC', 'XMR']
         for fee in fee_p:
             for fee_cur in currlist:
-                bagfifo = bags.BagFIFO('EUR', self.rel)
-                self.logger.info("Working with new empty BagFIFO object")
+                bagqueue = bags.BagQueue('EUR', self.rel)
+                self.logger.info("Working with new empty BagQueue object")
                 # Make up and process some trades:
                 self.trading_set(
-                    bagfifo,
+                    bagqueue,
                     budget=budget,
                     currency='EUR',
                     dayslist=days,
@@ -222,14 +222,14 @@ class TestBagFIFO(unittest.TestCase):
                     feelist=[(0, ''), (fee, fee_cur)])
 
                 self.assertEqual(
-                    bagfifo.bags[''][-1].cost,
-                    budget + bagfifo.profit[str(self.rng[0].year)])
+                    bagqueue.bags[''][-1].cost,
+                    budget + bagqueue.profit[str(self.rng[0].year)])
 
     def test_saving_loading(self):
         # Add handler to the logger (uncomment this to enable output)
         #self.logger.addHandler(self.handler)
 
-        bagfifo = bags.BagFIFO('EUR', self.rel)
+        bagqueue = bags.BagQueue('EUR', self.rel)
 
         # Make up some transactions:
         budget = 1000
@@ -249,19 +249,19 @@ class TestBagFIFO(unittest.TestCase):
                 'Trade', day3, 'EUR', proceeds, 'XMR', xmr, '', '0')
 
         # Only process first two transactions, so we have a bag in
-        # bagfifo.bags and one in bagfifo.in_transit to save:
+        # bagqueue.bags and one in bagqueue.in_transit to save:
         for t in [t1, t2]:
-            bagfifo.process_trade(t)
-            self.log_bags(bagfifo)
+            bagqueue.process_trade(t)
+            self.log_bags(bagqueue)
             self.logger.info("Profit so far: %.2f %s\n",
-                             bagfifo.profit[str(day1.year)],
-                             bagfifo.currency)
+                             bagqueue.profit[str(day1.year)],
+                             bagqueue.currency)
 
         # save state
         outfile = StringIO()
-        bagfifo.save(outfile)
-        # create new BagFIFO and restore state:
-        bf2 = bags.BagFIFO('EUR', self.rel)
+        bagqueue.save(outfile)
+        # create new BagQueue and restore state:
+        bf2 = bags.BagQueue('EUR', self.rel)
         outfile.seek(0)
         bf2.load(outfile)
 
@@ -269,34 +269,34 @@ class TestBagFIFO(unittest.TestCase):
         # and the report are new objects:
         excl = ['bags', 'in_transit', 'report']
         self.assertDictEqual(
-            {k:v for k, v in bagfifo.__dict__.items() if k not in excl},
+            {k:v for k, v in bagqueue.__dict__.items() if k not in excl},
             {k:v for k, v in bf2.__dict__.items() if k not in excl})
         # But the bags' contents must be equal:
-        for ex in bagfifo.bags:
-            for i, b in enumerate(bagfifo.bags[ex]):
+        for ex in bagqueue.bags:
+            for i, b in enumerate(bagqueue.bags[ex]):
                 self.assertDictEqual(b.__dict__, bf2.bags[ex][i].__dict__)
-        for cur in bagfifo.in_transit:
-            for i, b in enumerate(bagfifo.in_transit[cur]):
+        for cur in bagqueue.in_transit:
+            for i, b in enumerate(bagqueue.in_transit[cur]):
                 self.assertDictEqual(
                     b.__dict__, bf2.in_transit[cur][i].__dict__)
         # We did not pay anything yet, thus, the report should be empty:
-        self.assertListEqual(bagfifo.report.data, bf2.report.data)
+        self.assertListEqual(bagqueue.report.data, bf2.report.data)
         self.assertListEqual(bf2.report.data, [])
 
         # process the rest of the transactions:
         for t in [t3, t4, t5]:
-            bagfifo.process_trade(t)
+            bagqueue.process_trade(t)
             bf2.process_trade(t)
-            self.log_bags(bagfifo)
+            self.log_bags(bagqueue)
             self.logger.info("Profit so far: %.2f %s\n",
-                             bagfifo.profit[str(day3.year)], bagfifo.currency)
+                             bagqueue.profit[str(day3.year)], bagqueue.currency)
 
         # Now, bags lists should be empty, but we still need to
         # check the report manually:
         self.assertDictEqual(
-            {k:v for k, v in bagfifo.__dict__.items() if k != 'report'},
+            {k:v for k, v in bagqueue.__dict__.items() if k != 'report'},
             {k:v for k, v in bf2.__dict__.items() if k != 'report'})
-        self.assertListEqual(bagfifo.report.data, bf2.report.data)
+        self.assertListEqual(bagqueue.report.data, bf2.report.data)
 
 
 if __name__ == '__main__':

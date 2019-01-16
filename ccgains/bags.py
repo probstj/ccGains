@@ -157,14 +157,14 @@ class Bag(object):
         return json.dumps(self.__dict__, default=str)
 
 
-class BagFIFO(object):
+class BagQueue(object):
     def __init__(
-            self, base_currency, relation, json_dump='./precrash.json'):
-        """Create a BagFIFO object.
+            self, base_currency, relation, mode='FIFO', json_dump='./precrash.json'):
+        """Create a BagQueue object.
 
         This is the class that processes trades, handles all bags (i.e.
         creating and spending them) and calculates the capital gains.
-        After calculation, the member BagFIFO.report provides methods
+        After calculation, the member BagQueue.report provides methods
         to create reports.
 
         :param base_currency:
@@ -176,14 +176,20 @@ class BagFIFO(object):
         :param relation:
             A CurrencyRelation object which serves exchange rates
             between all currencies involved in trades which will later
-            be added to this BagFIFO.
+            be added to this BagQueue.
             If solely trades involving base_currency will be processed,
             a CurrencyRelation object is not necessary and can be
             `None`. In this case, if a trade between non-base
             currencies is encountered, an exception will be raised.
 
+        :param mode: (string)
+            Inventory accounting method to use. The following methods are supported:
+            - "FIFO": First In First Out
+            - "LIFO": Last In First Out
+            - "LPFO": Lowest Price First Out
+
         :param json_dump: (filename)
-            If specified, the state of the BagFIFO will be saved as
+            If specified, the state of the BagQueue will be saved as
             JSON formatted file with this file name just before an error
             is raised due to missing or conflicting data. If the error
             is fixed, the state can be loaded from this file and the
@@ -192,6 +198,7 @@ class BagFIFO(object):
         """
         self.currency = str(base_currency).upper()
         self.relation = relation
+        self.mode = mode.upper()
         # The profit (or loss if negative), recorded in self.currency:
         # (dictionary of {str(year): profit})
         self.profit = {}
@@ -253,7 +260,7 @@ class BagFIFO(object):
 
     def to_json(self, **kwargs):
         """Return a JSON formatted string representation of the current
-        state of this BagFIFO and its list of bags.
+        state of this BagQueue and its list of bags.
 
         As an external utility, self.relation will not be included in
         this string.
@@ -268,7 +275,7 @@ class BagFIFO(object):
             default=_json_encode_default, **kwargs)
 
     def save(self, filepath_or_buffer):
-        """Save the current state of this BagFIFO and its list of bags
+        """Save the current state of this BagQueue and its list of bags
         to a JSON formatted file, so that it can later be restored
         with `self.load`.
 
@@ -293,10 +300,10 @@ class BagFIFO(object):
 
 
     def load(self, filepath_or_buffer):
-        """Restore a previously saved state of a BagFIFO and its list
+        """Restore a previously saved state of a BagQueue and its list
         of bags from a JSON formatted file.
 
-        Everything from the current BagFIFO object will be overwritten
+        Everything from the current BagQueue object will be overwritten
         with the file's contents.
 
         :param filepath_or_buffer:
@@ -640,15 +647,66 @@ class BagFIFO(object):
             log.info("Taxable loss due to fees: %.3f %s",
                      prof, self.currency)
 
+    def sort_bags(self, exchange):
+        """Sort bags according to self.mode
+
+        :param exchange: (string) The unique name of the
+            exchange/wallet where the bags being sorted are.
+        """
+        if self.mode == 'LPFO':
+            # Sort bags by price, lowest first, than pick first with needed currency
+            self.bags[exchange] = sorted(self.bags[exchange], key=lambda bag: bag.price)
+
+    def pick_bag(self, exchange, currency, start_index=None):
+        """Pick bag from bag queue according to self.mode
+
+        :param exchange: (string) The unique name of the
+            exchange/wallet where the funds that are being spent are
+            taken from.
+        :param currency: (string) The currency being spent.
+        :param start_index: (int) List index to start from
+        """
+        def pick_first():
+            i = 0 if start_index is None else start_index
+            # next bag in line with fitting currency:
+            while self.bags[exchange][i].currency != currency:
+                i += 1
+                if i == len(self.bags[exchange]):
+                    # Corrupt data error: don't dump state.
+                    raise Exception(
+                        "There are no bags left with the requested currency")
+            return i, self.bags[exchange][i]
+
+        def pick_last():
+            # Iterate bags from the end
+            i = -1 if start_index is None else start_index
+            while self.bags[exchange][i].currency != currency:
+                i -= 1
+                if abs(i) > len(self.bags[exchange]):
+                    raise Exception(
+                        "There are no bags left with the requested currency")
+            return i, self.bags[exchange][i]
+
+        if self.mode == 'FIFO':
+            return pick_first()
+        elif self.mode == 'LIFO':
+            return pick_last()
+        elif self.mode == 'LPFO':
+            # Assume self.sort_bags() was called somewhere else
+            return pick_first()
+        else:
+            raise Exception(
+                "Unsupported inventory accounting method")
+
     def pay(self, dtime, currency, amount, exchange, fee_ratio=0,
             custom_rate=None, report_info=None):
         """Spend an amount of funds.
 
-        The money is taken out of the oldest bag on the exchange with
-        the proper currency first, then from the next fitting bags in
-        line each time a bag is emptied (FIFO principle). The bags'
-        prices are not changed, but their current amount and base value
-        (original cost) are decreased proportionally.
+        The money is taken out of the bag on the exchange with the proper
+        currency according to self.mode first, then from the next fitting bags
+        in line each time a bag is emptied. The bags' prices are not changed,
+        but their current amount and base value (original cost) are decreased
+        proportionally.
 
         This transaction and any profits or losses made will be logged
         and added to the capital gains report data.
@@ -672,7 +730,7 @@ class BagFIFO(object):
             Provide a custom rate for conversion of *currency* to the
             base currency. Usually (i.e. if this is None), the rate is
             fetched from the CurrencyRelation object provided when this
-            BagFIFO object was created. In some cases, one should rather
+            BagQueue object was created. In some cases, one should rather
             provide a rate, for example when base currency was bought
             with this payment, meaning a more specific rate for this
             trade can be provided than relying on the averaged historic
@@ -773,17 +831,11 @@ class BagFIFO(object):
             {'to_pay': to_pay, 'curr': currency,
              'exchange': exchange, 'fees': to_pay * fee_ratio})
         # Find bags with this currency and use them to pay for
-        # this, starting from first bag (FIFO):
-        i = 0
+        # this:
+        bag_index = None
+        self.sort_bags(exchange)
         while to_pay > 0:
-            # next bag in line with fitting currency:
-            while self.bags[exchange][i].currency != currency:
-                i += 1
-                if i == len(self.bags[exchange]):
-                    # Corrupt data error: don't dump state.
-                    raise Exception(
-                        "There are no bags left with the requested currency")
-            bag = self.bags[exchange][i]
+            bag_index, bag = self.pick_bag(exchange, currency, start_index=bag_index)
 
             # Spend as much as possible from this bag:
             log.info("Paying with bag from %s, containing %.8f %s",
@@ -853,9 +905,7 @@ class BagFIFO(object):
                 log.info("Still to be paid with another bag: %.8f %s",
                      to_pay, currency)
             if bag.is_empty():
-                del self.bags[exchange][i]
-            else:
-                i += 1
+                del self.bags[exchange][bag_index]
 
         # update and clean up totals:
         if total - amount == 0:
