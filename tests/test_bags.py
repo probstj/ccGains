@@ -319,16 +319,6 @@ class TestBagFIFO(unittest.TestCase):
             with self.assertRaises((bags.CurrencyTypeException, ValueError)):
                 bagfifo.buy_with_base_currency(self.rng[0], 10, 'usd', 10, 'Coinbase')
 
-        # Should not be able to withdraw
-        with self.subTest(method="withdraw"):
-            with self.assertRaises((bags.CurrencyTypeException, ValueError)):
-                bagfifo.withdraw(self.rng[1], 'usd', '1', 0, 'Binance')
-
-        # Should not be able to deposit
-        with self.subTest(method="deposit"):
-            with self.assertRaises((bags.CurrencyTypeException, ValueError)):
-                bagfifo.deposit(self.rng[2], 'usd', '5', '0', 'Coinbase')
-
         # Should not be able to pay
         with self.subTest(method="pay"):
             with self.assertRaises((bags.CurrencyTypeException, ValueError)):
