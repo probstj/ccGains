@@ -298,6 +298,32 @@ class TestBagQueue(unittest.TestCase):
             {k:v for k, v in bf2.__dict__.items() if k != 'report'})
         self.assertListEqual(bagqueue.report.data, bf2.report.data)
 
+    def test_no_like_for_like(self):
+        """Test that it is not possible to deposit, withdraw, buy, or pay
+        with the BagFIFO base currency.
+
+        Note: testing against both the new CurrencyTypeException and also ValueError
+        This is in case a future change modifies the order in which arguments are
+        checked in any of these functions, which is not critical in some cases.
+        The point is that none of these should succeed if the BagFIFO base currency
+        (fiat) is used in any transaction instead of expected crypto
+        """
+
+        # Note: 'usd' will be converted to uppercase in the constructor
+        bagfifo = bags.BagFIFO('usd', self.rel)
+
+        assert bagfifo.currency == 'USD'
+
+        # Should not be able to buy
+        with self.subTest(method="buy_with_base_currency"):
+            with self.assertRaises((bags.CurrencyTypeException, ValueError)):
+                bagfifo.buy_with_base_currency(self.rng[0], 10, 'usd', 10, 'Coinbase')
+
+        # Should not be able to pay
+        with self.subTest(method="pay"):
+            with self.assertRaises((bags.CurrencyTypeException, ValueError)):
+                bagfifo.pay(self.rng[3], 'usd', '1','Coinbase')
+
 
 if __name__ == '__main__':
     unittest.main()
