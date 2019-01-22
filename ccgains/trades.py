@@ -213,7 +213,9 @@ TPLOC_BITTREX_TRANSFER = {
     'comment': 4
 }
 
-def _parse_trade(str_list, param_locs, default_timezone):
+
+def _parse_trade(str_list, param_locs, default_timezone,
+                 fill_missing_fees=False):
     """Parse list of strings *str_list* into a Trade object according
     to *param_locs*.
 
@@ -236,6 +238,14 @@ def _parse_trade(str_list, param_locs, default_timezone):
         datetime string inside str_list. Otherwise the time data will
         be interpreted as time given in *default_timezone*.
 
+    :param fill_missing_fees: bool:
+        Indicate whether fees should be obtained with 'blockcypher' in case
+        the csv-file does not contain them. This will be done based on the
+        transaction-ID (TX). This only accounts for the blockchain fees, so it
+        is intend to be used in personal wallets only, as it does not (cannot)
+        consider the exchange fees. This should be specified in the specific
+        `append_***_csv` method. (Default: `False`)
+
     :return: Trade object
 
     """
@@ -257,7 +267,41 @@ def _parse_trade(str_list, param_locs, default_timezone):
         else:
             pdict[key] = val
 
+    # Get missing fees if requested
+    if fill_missing_fees and pdict['kind'] == 'Withdrawal':
+        tx = pdict['mark']
+        fee_curr = pdict['fee_currency']
+        pdict['fee_amount'] = _get_tx_fees(tx, fee_curr)
+
     return Trade(default_timezone=default_timezone, **pdict)
+
+
+def _get_tx_fees(txid, currency):
+    """Get missing transaction fees using blockcypher API.
+
+    :param txid: str:
+        The transaction-ID.
+    :param currency: str:
+        The currency of the fees.
+
+    :return: obtained fees as Decimal object
+
+    """
+    from blockcypher import get_transaction_details, from_satoshis
+    try:
+        tx = get_transaction_details(txid, coin_symbol=currency.lower())
+        if currency == 'BTC':
+            fee = from_satoshis(tx['fees'], currency.lower())
+            feeval = Decimal(fee)
+        elif currency == 'LTC':
+            fee = tx['fees'] / 10**8  # Smallest unit of measure for LTC
+            feeval = Decimal(fee)
+    except AssertionError:
+        print('Transaction id %s not valid' % txid)
+        return None
+        print('Wrong Transaction ID.')
+
+    return feeval
 
 
 class Trade(object):
@@ -631,7 +675,7 @@ class TradeHistory(object):
 
     def append_csv(
             self, file_name, param_locs=range(11), delimiter=',', skiprows=1,
-            default_timezone=None):
+            default_timezone=None, fill_missing_fees=False):
         """Import trades from a csv file and add them to this
         TradeHistory.
 
@@ -656,6 +700,11 @@ class TradeHistory(object):
             according to the locale setting; or it must be a tzinfo
             subclass (from dateutil.tz or pytz)
 
+        :param fill_missing_fees: bool:
+            Indicate whether fees should be obtained with 'blockcypher' in case
+            the csv-file does not contain them. This will be done based on the
+            transaction-ID (TX). (Default: `False`)
+
         """
         with open(file_name) as f:
             csvlines = f.readlines()
@@ -672,7 +721,8 @@ class TradeHistory(object):
                 # ignore empty lines
                 continue
             self.tlist.append(
-                _parse_trade(line, param_locs, default_timezone))
+                _parse_trade(line, param_locs, default_timezone,
+                             fill_missing_fees))
 
         log.info("Loaded %i transactions from %s",
                  len(self.tlist) - numtrades, file_name)
@@ -1080,8 +1130,8 @@ class TradeHistory(object):
         self.append_csv(file_name, TPLOC_TREZOR_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
 
-    def append_electrum_csv(self, file_name, skiprows=1,
-                            default_timezone=None):
+    def append_electrum_csv(self, file_name, fill_missing_fees=False,
+                            skiprows=1, default_timezone=None):
         """Import trades from a csv file exported from the Electrum Wallet
         and add them to this TradeHistory.
 
@@ -1090,6 +1140,10 @@ class TradeHistory(object):
         exactly the same.
 
         Afterwards, all trades will be sorted by date and time.
+
+        :param add_missing_fees: bool
+            Indicates whether the missing fees should be obtained using the
+            'blockcypher' API.
 
         :param default_timezone:
             This parameter is ignored if there is timezone data in the
@@ -1102,9 +1156,9 @@ class TradeHistory(object):
             it might change in future.
 
         """
-
         self.append_csv(file_name, TPLOC_ELECTRUM_WALLET, delimiter=',',
-                        skiprows=skiprows, default_timezone=default_timezone)
+                        skiprows=skiprows, default_timezone=default_timezone,
+                        fill_missing_fees=fill_missing_fees)
 
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
                             delimiter=',', default_timezone=None):
