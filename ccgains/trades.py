@@ -176,23 +176,22 @@ TPLOC_COINBASE_TRANSFER = {
     'comment': 6
 }
 TPLOC_BITTREX_TRADES = {
-    'kind': 2,
-    'dtime': 8,
+    'kind': 3,
+    'dtime': 14,
     'buy_currency': lambda cols:
-        cols[1].split('-')[cols[2].split('_')[1] == 'BUY'],
+        cols[1].split('-')[cols[3].split('_')[1] == 'BUY'],
     'buy_amount': lambda cols:
-        Decimal(cols[3]) if cols[2].split('_')[1] == 'BUY' else Decimal(cols[6]) - Decimal(cols[5]),
+        Decimal(cols[5]) if cols[3].split('_')[1] == 'BUY' else Decimal(cols[8]) - Decimal(cols[7]),
     'sell_currency': lambda cols:
-        cols[1].split('-')[cols[2].split('_')[1] == 'SELL'],
+        cols[1].split('-')[cols[3].split('_')[1] == 'SELL'],
     'sell_amount': lambda cols:
-        Decimal(cols[3]) if cols[2].split('_')[1] == 'SELL' else Decimal(cols[6]) + Decimal(cols[5]),
+        Decimal(cols[5]) if cols[3].split('_')[1] == 'SELL' else Decimal(cols[8]) + Decimal(cols[7]),
     'fee_currency': lambda cols:
         cols[1].split('-')[0],
-    'fee_amount': 5,
+    'fee_amount': 7,
     'exchange': 'Bittrex',
     'mark': -1,
     'comment': 0
-
 }
 TPLOC_BITTREX_TRANSFER = {
     'kind': lambda cols:
@@ -212,6 +211,32 @@ TPLOC_BITTREX_TRANSFER = {
     'mark': -1,
     'comment': 4
 }
+TPLOC_KRAKEN_TRADES = {
+    'kind': lambda cols: cols[4].strip('" \n\t')[0].upper() + cols[4].strip('" \n\t')[1:],
+    'dtime': 3,
+    'buy_currency': lambda cols: KRAKEN_PAIRS[cols[2].strip('" \n\t')][1][0],
+    'buy_amount': 9,
+    'sell_currency': lambda cols: KRAKEN_PAIRS[cols[2].strip('" \n\t')][1][1],
+    'sell_amount': 7,
+    'fee_currency': lambda cols: KRAKEN_PAIRS[cols[2].strip('" \n\t')][1][1],
+    'fee_amount': 8,
+    'exchange': 'Kraken', 'mark': -1, 'comment': 1
+}
+TPLOC_KRAKEN_LEDGERS = [
+	3, 2, 5, 6, '', '0', 5, 7, "Kraken", -1, 1]
+KRAKEN_PAIRS = {
+    'XXMRZEUR': ['XMR/EUR', ['XMR', 'EUR']],
+    'XXBTZEUR': ['BTC/EUR', ['BTC', 'EUR']],
+    'XETCZEUR': ['ETC/EUR', ['ETC', 'EUR']],
+    'XETHZEUR': ['ETH/EUR', ['ETH', 'EUR']],
+    'XLTCZEUR': ['LTC/EUR', ['LTC', 'EUR']],
+    'BCHEUR': ['BCH/EUR', ['BCH', 'EUR']],
+    'BCHXBT': ['BCH/BTC', ['BCH', 'BTC']],
+    'BSVXBT': ['BSV/BTC', ['BSV', 'BTC']],
+    'XETHXXBT': ['ETH/BTC', ['ETH', 'BTC']],
+    'XXMRXXBT': ['XMR/BTC', ['XMR', 'BTC']],
+    'XETCXXBT': ['ETC/BTC', ['ETC', 'BTC']],
+    'XETCXETH': ['ETC/ETH', ['ETC', 'ETH']]}
 
 def _parse_trade(str_list, param_locs, default_timezone):
     """Parse list of strings *str_list* into a Trade object according
@@ -1085,7 +1110,7 @@ class TradeHistory(object):
         """Import trades from a csv file exported from the Electrum Wallet
         and add them to this TradeHistory.
 
-        It wolrks with exported files from the original Electrum Wallet (BTC)
+        It works with exported files from the original Electrum Wallet (BTC)
         as well as for the Electrum Litecoin Wallet (LTC), as the format is
         exactly the same.
 
@@ -1105,6 +1130,162 @@ class TradeHistory(object):
 
         self.append_csv(file_name, TPLOC_ELECTRUM_WALLET, delimiter=',',
                         skiprows=skiprows, default_timezone=default_timezone)
+
+    def append_kraken_csv(
+            self, file_name, which_data='trades', condense_trades=False,
+            delimiter=',', skiprows=1, default_timezone=tz.tzutc()):
+        """Import trades from a csv file exported from kraken.com and
+        add them to this TradeHistory.
+
+        Afterwards, all trades will be sorted by date and time.
+
+        :param which_data: (string)
+            Must be one of `"trades"` or `"ledgers"`, the two categories
+            of data that Kraken allows to export.
+
+        :param condense_trades: (bool)
+            Merge consecutive trades with identical order number? The
+            time of the last merged trade will be used for the resulting
+            trade. Only has an effect if `which_data == 'trades'`.
+
+        :param default_timezone:
+            This parameter is ignored if there is timezone data in the
+            csv string. Otherwise, if None, the time data in the csv
+            will be interpreted as time in the local timezone
+            according to the locale setting; or it must be a tzinfo
+            subclass (from dateutil.tz or pytz);
+
+        """
+        wdata = which_data[:5].lower()
+        if wdata not in ['trade', 'ledge']:
+            raise ValueError(
+                    '`which_data` must be one of "trades" '
+                    'or "ledgers".')
+        if wdata == 'ledge':
+            # This block contains the altered functions 'append_csv' and
+            # '_parse_trade' because the Kraken csv's require further
+            # adaptation than just the PLOCs
+            plocs = TPLOC_KRAKEN_LEDGERS
+
+            param_locs=plocs
+            with open(file_name) as f:
+                csvlines = f.readlines()
+
+            if default_timezone is None:
+                default_timezone = tz.tzlocal()
+
+            numtrades = len(self.tlist)
+
+	        # convert input lines to Trades:
+            for csvline in csvlines[skiprows:]:
+                line = csvline.split(delimiter)
+                if not line:
+                    # ignore empty lines
+                    continue
+
+                # ignore trades from the ledgers file. Note that margin
+                # trading and air-drops (transfers) are possible in a 
+                # Kraken account and will be included. 
+                if 'trade' in line[3]:
+                    continue
+
+                if 'ZEUR' in line[5]:
+                    # ignore lines that contain deposits or withdrawals in EUR
+                    continue
+
+                line[3] = line[3][1].upper() + line[3][2:]
+                # capitalize first letter of transaction type
+                line[5] = line[5][0:].replace('XBT','BTC').replace('"X','"')
+                # abbreviate four letter currency code to three letters and
+                # replace XBT by BTC. Might need a more comprehensive list
+                # approach in the future, depending on the currency names on Kraken.
+                trade = _parse_trade(line, plocs, default_timezone)
+                self.tlist.append(trade)
+
+            log.info("Loaded %i transactions from %s",
+                    len(self.tlist) - numtrades, file_name)
+	        # trades must be sorted:
+            self.tlist.sort(key=self._trade_sort_key, reverse=False)
+
+        else:
+            plocs = TPLOC_KRAKEN_TRADES
+
+        if plocs == TPLOC_KRAKEN_TRADES and condense_trades:
+            # special loading of trades if they need to be condensed
+            with open(file_name) as f:
+                csvlines = f.readlines()
+
+            if default_timezone is None:
+                default_timezone = tz.tzlocal()
+
+            # current number of imported trades:
+            numtrades = len(self.tlist)
+            grouplist = []
+            groupid = None
+
+            # convert input lines to Trades:
+            num = len(csvlines) - skiprows
+            for i, csvline in enumerate(csvlines[skiprows:]):
+                line = csvline.split(delimiter)
+                trade = _parse_trade(line, plocs, default_timezone)
+                if groupid is None:
+                    groupid = trade.comment
+                if groupid == trade.comment:
+                    grouplist.append(trade)
+                if groupid != trade.comment or i == num - 1:
+                    # time to merge trades in grouplist and place in tlist
+                    grouplist.sort(key=self._trade_sort_key, reverse=True)
+                    last = grouplist[0]
+                    for t in grouplist[1:]:
+                        if (last.kind != t.kind
+                                or last.buycur != t.buycur
+                                or last.sellcur != t.sellcur
+                                or last.feecur != t.feecur
+                                or last.exchange != t.exchange
+                                or last.mark != t.mark):
+                            raise Exception(
+                                "Error in csv: The trades from %s and %s "
+                                "share the same order number, but differ "
+                                "in market, category or kind." % (
+                                    last.dtime, t.dtime))
+                        else:
+                            last.buyval += t.buyval
+                            last.sellval += t.sellval
+                            last.feeval += t.feeval
+                    # Exchange buy with sell, if needed
+                    if 'ell' in last.kind:
+                        tmp1 = last.sellcur
+                        tmp2 = last.sellval
+                        last.sellcur = last.buycur
+                        last.sellval = last.buyval
+                        last.buycur = tmp1
+                        last.buyval = tmp2
+
+                    # add consolidated trade to self.tlist:
+                    self.tlist.append(last)
+                    # reset groupslist:
+                    if groupid != trade.comment:
+                        if i < num - 1:
+                            # current trade did not match,
+                            # but might match next trade:
+                            grouplist = [trade]
+                            groupid = trade.comment
+                        else:
+                            # this was the last trade and did not match:
+                            self.tlist.append(trade)
+                            grouplist = []
+                            groupid = None
+                    else:
+                        # this was the last trade but was already included
+                        # and merged with grouplist:
+                        grouplist = []
+                        groupid = None
+
+            log.info("Loaded %i transactions from %s",
+                     len(self.tlist) - numtrades, file_name)
+
+            # trades must be sorted:
+            self.tlist.sort(key=self._trade_sort_key, reverse=False)
 
     def append_coinbase_csv(self, file_name, currency=None, skiprows=4,
                             delimiter=',', default_timezone=None):
