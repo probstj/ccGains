@@ -176,23 +176,22 @@ TPLOC_COINBASE_TRANSFER = {
     'comment': 6
 }
 TPLOC_BITTREX_TRADES = {
-    'kind': 2,
-    'dtime': 8,
+    'kind': 3,
+    'dtime': 14,
     'buy_currency': lambda cols:
-        cols[1].split('-')[cols[2].split('_')[1] == 'BUY'],
+        cols[1].split('-')[cols[3].split('_')[1] == 'BUY'],
     'buy_amount': lambda cols:
-        Decimal(cols[3]) if cols[2].split('_')[1] == 'BUY' else Decimal(cols[6]) - Decimal(cols[5]),
+        Decimal(cols[5]) if cols[3].split('_')[1] == 'BUY' else Decimal(cols[8]) - Decimal(cols[7]),
     'sell_currency': lambda cols:
-        cols[1].split('-')[cols[2].split('_')[1] == 'SELL'],
+        cols[1].split('-')[cols[3].split('_')[1] == 'SELL'],
     'sell_amount': lambda cols:
-        Decimal(cols[3]) if cols[2].split('_')[1] == 'SELL' else Decimal(cols[6]) + Decimal(cols[5]),
+        Decimal(cols[5]) if cols[3].split('_')[1] == 'SELL' else Decimal(cols[8]) + Decimal(cols[7]),
     'fee_currency': lambda cols:
         cols[1].split('-')[0],
-    'fee_amount': 5,
+    'fee_amount': 7,
     'exchange': 'Bittrex',
     'mark': -1,
     'comment': 0
-
 }
 TPLOC_BITTREX_TRANSFER = {
     'kind': lambda cols:
